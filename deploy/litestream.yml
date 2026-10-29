@@ -1,0 +1,14 @@
+# Continuous SQLite backup for the Split Card server; used only when
+# LITESTREAM_REPLICA_URL and the LITESTREAM_* credentials are set (see
+# deploy/server-entrypoint.sh). Credentials are read from the environment.
+dbs:
+  - path: ${LITESTREAM_DB_PATH}
+    replica:
+      # For Cloudflare R2:
+      # s3://<bucket>/splitcard?endpoint=<account-id>.r2.cloudflarestorage.com&region=auto
+      url: ${LITESTREAM_REPLICA_URL}
+
+# Keep a week of snapshots, so a restore can go back that far.
+snapshot:
+  interval: 24h
+  retention: 168h

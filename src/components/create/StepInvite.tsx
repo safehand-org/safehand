@@ -10,6 +10,8 @@ export function StepInvite({ state }: { state: WizardState }) {
   const [value, setValue] = useState(path);
 
   useEffect(() => {
+    // The origin is only known in the browser, after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setValue(`${window.location.origin}${path}`);
   }, [path]);
 

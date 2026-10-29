@@ -23,6 +23,8 @@ export function SignupView() {
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Partial<SignupState>;
+        // Session storage is only readable in the browser, after hydration.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setState((current) => ({ ...current, ...parsed }));
       } catch {
         window.sessionStorage.removeItem(SIGNUP_STORAGE_KEY);

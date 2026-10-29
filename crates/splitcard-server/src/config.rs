@@ -19,17 +19,24 @@ pub const DEFAULT_OTS_CALENDARS: [&str; 4] = [
 /// Upgrade interval used when `OTS_UPGRADE_INTERVAL_SECS` is unset.
 pub const DEFAULT_OTS_UPGRADE_INTERVAL_SECS: u64 = 600;
 
+/// Variable that, set to `1` or `true`, allows an `http://` `PUBLIC_BASE_URL`
+/// for local development.
+pub const DEVELOPMENT_FLAG: &str = "SPLITCARD_DEV";
+
 /// Validated server configuration.
 ///
 /// `Debug` never prints the server secret key.
 #[derive(Clone)]
 pub struct Config {
-    /// `BIND_ADDR`: address the HTTP server listens on.
+    /// Address the HTTP server listens on: `0.0.0.0:$PORT` when `PORT` is
+    /// set, as hosting platforms expect, else `BIND_ADDR`.
     pub bind_addr: SocketAddr,
     /// `DATABASE_URL`: an SQLite file path or `sqlite:` URL.
     pub database_url: String,
     /// `PUBLIC_BASE_URL` without a trailing slash; NIP-98 `u` tags must equal
-    /// this plus the request path and query.
+    /// this plus the request path and query. It may have a path, such as
+    /// `https://example.com/api` behind a proxy that strips `/api`. It must
+    /// be `https` unless [`DEVELOPMENT_FLAG`] is set.
     pub public_base_url: String,
     /// `RELAYS`: `wss://` relays card events are published to.
     pub relays: Vec<Url>,
@@ -41,6 +48,8 @@ pub struct Config {
     /// `OTS_UPGRADE_INTERVAL_SECS`: pause between attempts to upgrade
     /// pending proofs.
     pub ots_upgrade_interval: Duration,
+    /// [`DEVELOPMENT_FLAG`]: whether local-development relaxations apply.
+    pub development: bool,
 }
 
 impl fmt::Debug for Config {
@@ -54,6 +63,7 @@ impl fmt::Debug for Config {
             .field("server_pubkey", &self.server_keys.public_key().to_hex())
             .field("ots_calendars", &self.ots_calendars)
             .field("ots_upgrade_interval", &self.ots_upgrade_interval)
+            .field("development", &self.development)
             .finish_non_exhaustive()
     }
 }
@@ -103,12 +113,31 @@ impl Config {
         };
         let require = |name: &'static str| get(name).ok_or(ConfigError::Missing { name });
 
-        let bind_addr = get("BIND_ADDR")
-            .unwrap_or_else(|| DEFAULT_BIND_ADDR.to_owned())
-            .parse()
-            .map_err(|_| invalid("BIND_ADDR", "expected host:port, like 127.0.0.1:3000"))?;
+        let development = match get(DEVELOPMENT_FLAG).as_deref() {
+            None | Some("0" | "false") => false,
+            Some("1" | "true") => true,
+            Some(_) => return Err(invalid(DEVELOPMENT_FLAG, "expected 1, true, 0 or false")),
+        };
+        let bind_addr = match get("PORT") {
+            Some(port) => port
+                .parse::<u16>()
+                .map(|port| SocketAddr::from(([0, 0, 0, 0], port)))
+                .map_err(|_| invalid("PORT", "expected a port number"))?,
+            None => get("BIND_ADDR")
+                .unwrap_or_else(|| DEFAULT_BIND_ADDR.to_owned())
+                .parse()
+                .map_err(|_| invalid("BIND_ADDR", "expected host:port, like 127.0.0.1:3000"))?,
+        };
         let database_url = require("DATABASE_URL")?;
         let public_base_url = parse_base_url(&require("PUBLIC_BASE_URL")?)?;
+        if !development && !public_base_url.starts_with("https://") {
+            return Err(invalid(
+                "PUBLIC_BASE_URL",
+                format!(
+                    "must be https; set {DEVELOPMENT_FLAG}=1 to allow http in local development"
+                ),
+            ));
+        }
         let relays = parse_relays(&require("RELAYS")?)?;
         let server_keys = SecretKey::parse(&require("SERVER_SECRET_KEY")?)
             .map(Keys::new)
@@ -138,6 +167,7 @@ impl Config {
             server_keys,
             ots_calendars,
             ots_upgrade_interval,
+            development,
         })
     }
 }

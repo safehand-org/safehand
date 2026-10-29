@@ -1,0 +1,72 @@
+# Render Blueprint for Split Card: the website (public) and the API server
+# (private, reachable only from the website). See deploy/render.md.
+services:
+  # Serves the app and proxies /api/*, /.well-known/lnurlp/* and /lnurlp/*
+  # to the server, so browsers see one origin.
+  - type: web
+    name: splitcard-web
+    runtime: docker
+    dockerfilePath: ./deploy/web.Dockerfile
+    dockerContext: .
+    plan: 0.5c-512mb
+    region: frankfurt
+    branch: main
+    autoDeployTrigger: checksPass
+    healthCheckPath: /
+    envVars:
+      # host:port of the server on Render's private network.
+      - key: SERVER_INTERNAL_URL
+        fromService:
+          type: pserv
+          name: splitcard-server
+          property: hostport
+      # PORT and HOSTNAME are set in the image (10000, 0.0.0.0).
+
+  # A private service: it has a persistent disk, and Render restarts it
+  # after 60 s of failed TCP health checks. (An HTTP health check path is
+  # only configurable on web services; /health is used by the smoke test.)
+  - type: pserv
+    name: splitcard-server
+    runtime: docker
+    dockerfilePath: ./deploy/server.Dockerfile
+    dockerContext: .
+    plan: 0.5c-512mb
+    region: frankfurt
+    branch: main
+    autoDeployTrigger: checksPass
+    disk:
+      name: splitcard-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      # The server listens on 0.0.0.0:$PORT. (BIND_ADDR is read only when
+      # PORT is unset, so it is not set here.)
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        value: sqlite:///var/data/splitcard.db
+      # The public URL of the API, as browsers call it: https://<domain>/api.
+      # NIP-98 signatures are checked against this plus the request path.
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # Must stay 0 in production: 1 allows an http:// PUBLIC_BASE_URL.
+      - key: SPLITCARD_DEV
+        value: "0"
+      - key: RELAYS
+        value: wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net
+      # The server's Nostr key for publishing card events. Generate a fresh
+      # one for production (deploy/render.md); never reuse a local key.
+      - key: SERVER_SECRET_KEY
+        sync: false
+      - key: OTS_CALENDARS
+        value: https://a.pool.opentimestamps.org,https://b.pool.opentimestamps.org,https://a.pool.eternitywall.com,https://ots.btc.catallaxy.com
+      - key: OTS_UPGRADE_INTERVAL_SECS
+        value: "600"
+      # Continuous backup with Litestream. Leave all three empty to run
+      # without it; set all three to enable it.
+      - key: LITESTREAM_REPLICA_URL
+        sync: false
+      - key: LITESTREAM_ACCESS_KEY_ID
+        sync: false
+      - key: LITESTREAM_SECRET_ACCESS_KEY
+        sync: false

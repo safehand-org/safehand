@@ -23,6 +23,8 @@ pub mod ots;
 pub mod outbox;
 /// Request handlers.
 pub mod routes;
+/// Graceful shutdown for background loops.
+pub mod shutdown;
 /// Team slug rules.
 pub mod slug;
 
@@ -33,12 +35,11 @@ use std::{
 
 use axum::{
     Router,
-    http::{Method, header},
     response::IntoResponse,
     routing::{get, post, put},
 };
 use sqlx::SqlitePool;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::trace::TraceLayer;
 
 use crate::{config::Config, error::ApiError};
 
@@ -85,12 +86,10 @@ pub fn install_tls_provider() {
 }
 
 /// Builds the API router.
+///
+/// It sends no CORS headers: browsers reach the API only through the
+/// website's own origin, which proxies `/api` here.
 pub fn router(state: AppState) -> Router {
-    // Auth is a header, never a cookie, so any origin may call the API.
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_methods([Method::GET, Method::POST, Method::PUT])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]);
     Router::new()
         .route("/health", get(health))
         .route("/me", get(routes::me::get))
@@ -121,7 +120,6 @@ pub fn router(state: AppState) -> Router {
         .route("/teams/{id}/verify", get(routes::verify::team))
         .fallback(not_found)
         .layer(TraceLayer::new_for_http())
-        .layer(cors)
         .with_state(state)
 }
 

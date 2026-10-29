@@ -1,0 +1,17 @@
+# Build output and dependencies; the images build their own.
+**/target/
+**/node_modules/
+**/.next/
+**/pkg/
+.git/
+# Secrets and local data must never reach an image.
+**/.env*
+**/*.db
+**/*.db-*
+**/*.db.*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3*
+**/*.key
+**/*.pem
+**/*key.hex

@@ -14,7 +14,7 @@ use nostr_sdk::client::Client;
 use sqlx::{FromRow, SqliteConnection, SqlitePool};
 use url::Url;
 
-use crate::{Clock, db_time};
+use crate::{Clock, db_time, shutdown::Shutdown};
 
 /// One relay's answer to a publish: `Ok` if it accepted the event.
 pub type RelayResult = Result<(), String>;
@@ -268,20 +268,25 @@ async fn summarize_entry(conn: &mut SqliteConnection, outbox_id: i64) -> Result<
     Ok(())
 }
 
-/// Runs [`process_due`] forever, pausing `poll_interval` between passes.
-/// Spawn it as a background task.
+/// Runs [`process_due`], pausing `poll_interval` between passes, until
+/// `shutdown` is requested; a pass in progress always finishes. Spawn it as a
+/// background task.
 pub async fn run<P: RelayPublisher>(
     pool: SqlitePool,
     publisher: P,
     clock: Arc<dyn Clock>,
     settings: OutboxSettings,
+    mut shutdown: Shutdown,
 ) {
     loop {
         if let Err(error) = process_due(&pool, &publisher, clock.as_ref(), &settings).await {
             tracing::error!(%error, "relay outbox pass failed");
         }
-        tokio::time::sleep(settings.poll_interval).await;
+        if !shutdown.sleep(settings.poll_interval).await {
+            break;
+        }
     }
+    tracing::info!("relay outbox stopped");
 }
 
 /// Publishes through `nostr-sdk` to a fixed set of relays.

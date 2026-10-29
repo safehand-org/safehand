@@ -1,6 +1,11 @@
 //! SQLite connection and embedded migrations.
 
-use std::{str::FromStr, time::Duration};
+use std::{
+    fs::OpenOptions,
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Duration,
+};
 
 use sqlx::{
     SqlitePool,
@@ -33,6 +38,72 @@ pub async fn connect(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
     let pool = SqlitePoolOptions::new().connect_with(options).await?;
     migrate(&pool).await?;
     Ok(pool)
+}
+
+/// Why the database file's directory cannot be used.
+#[derive(Debug, thiserror::Error)]
+pub enum DatabaseDirError {
+    /// The directory does not exist.
+    #[error("database directory {} does not exist", dir.display())]
+    Missing {
+        /// The directory.
+        dir: PathBuf,
+    },
+    /// The path exists but is not a directory.
+    #[error("database directory {} is not a directory", dir.display())]
+    NotADirectory {
+        /// The path.
+        dir: PathBuf,
+    },
+    /// A file cannot be created there.
+    #[error("database directory {} is not writable: {source}", dir.display())]
+    NotWritable {
+        /// The directory.
+        dir: PathBuf,
+        /// The error creating a test file.
+        source: std::io::Error,
+    },
+}
+
+/// The file `database_url` names, or `None` for an in-memory database.
+fn database_file(database_url: &str) -> Option<PathBuf> {
+    let path = match database_url.strip_prefix("sqlite:") {
+        Some(rest) => rest.strip_prefix("//").unwrap_or(rest),
+        None => database_url,
+    };
+    let (path, query) = path.split_once('?').unwrap_or((path, ""));
+    let in_memory = path.is_empty() || path == ":memory:" || query.contains("mode=memory");
+    (!in_memory).then(|| PathBuf::from(path))
+}
+
+/// Checks that the directory holding `database_url`'s file exists and is
+/// writable, so a missing or read-only disk fails at startup with a clear
+/// message instead of on the first write. In-memory databases pass.
+///
+/// # Errors
+///
+/// Returns why the directory cannot be used.
+pub fn check_database_dir(database_url: &str) -> Result<(), DatabaseDirError> {
+    let Some(file) = database_file(database_url) else {
+        return Ok(());
+    };
+    let dir = match file.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => Path::new(".").to_path_buf(),
+    };
+    if !dir.exists() {
+        return Err(DatabaseDirError::Missing { dir });
+    }
+    if !dir.is_dir() {
+        return Err(DatabaseDirError::NotADirectory { dir });
+    }
+    let probe = dir.join(format!(".splitcard-write-check-{}", std::process::id()));
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .and_then(|_| std::fs::remove_file(&probe))
+        .map_err(|source| DatabaseDirError::NotWritable { dir, source })
 }
 
 /// The migration that turns event teams into standalone teams with slugs.
@@ -123,4 +194,77 @@ pub async fn begin_write(
     pool: &SqlitePool,
 ) -> Result<sqlx::Transaction<'static, sqlx::Sqlite>, sqlx::Error> {
     pool.begin_with("BEGIN IMMEDIATE").await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{DatabaseDirError, check_database_dir, database_file};
+
+    #[test]
+    fn database_urls_name_their_file() {
+        for (url, file) in [
+            ("/var/data/splitcard.db", Some("/var/data/splitcard.db")),
+            (
+                "sqlite:///var/data/splitcard.db",
+                Some("/var/data/splitcard.db"),
+            ),
+            (
+                "sqlite:data/splitcard.db?mode=rwc",
+                Some("data/splitcard.db"),
+            ),
+            ("splitcard.db", Some("splitcard.db")),
+            ("sqlite::memory:", None),
+            ("sqlite://file.db?mode=memory", None),
+        ] {
+            assert_eq!(database_file(url), file.map(PathBuf::from), "{url}");
+        }
+    }
+
+    #[test]
+    fn missing_and_unwritable_directories_are_refused() {
+        let base = std::env::temp_dir().join(format!("splitcard-dir-check-{}", std::process::id()));
+        std::fs::create_dir_all(&base).expect("temp dir");
+        let ok = base.join("splitcard.db");
+        check_database_dir(ok.to_str().expect("utf-8")).expect("writable");
+        assert_eq!(
+            std::fs::read_dir(&base).expect("list").count(),
+            0,
+            "no probe left behind"
+        );
+
+        let missing = base.join("absent/splitcard.db");
+        assert!(matches!(
+            check_database_dir(missing.to_str().expect("utf-8")),
+            Err(DatabaseDirError::Missing { .. })
+        ));
+        let file = base.join("plain-file");
+        std::fs::write(&file, b"").expect("file");
+        let under_file = file.join("splitcard.db");
+        assert!(matches!(
+            check_database_dir(under_file.to_str().expect("utf-8")),
+            Err(DatabaseDirError::NotADirectory { .. })
+        ));
+        check_database_dir("sqlite::memory:").expect("in-memory needs no directory");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let read_only = base.join("read-only");
+            std::fs::create_dir(&read_only).expect("dir");
+            std::fs::set_permissions(&read_only, std::fs::Permissions::from_mode(0o555))
+                .expect("chmod");
+            let result =
+                check_database_dir(read_only.join("splitcard.db").to_str().expect("utf-8"));
+            // Root can write anywhere; check only where the mode is enforced.
+            let enforced = std::fs::write(read_only.join("probe"), b"").is_err();
+            std::fs::set_permissions(&read_only, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod back");
+            if enforced {
+                assert!(matches!(result, Err(DatabaseDirError::NotWritable { .. })));
+            }
+        }
+        std::fs::remove_dir_all(&base).expect("clean up");
+    }
 }

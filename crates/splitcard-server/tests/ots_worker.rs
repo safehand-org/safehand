@@ -23,6 +23,7 @@ use splitcard_server::ots::{
     format::{Attestation, Item, Op, Timestamp, parse_file},
     worker::{self, TimestampSettings, is_allowed_upgrade_calendar, submit_due, upgrade_pending},
 };
+use splitcard_server::shutdown;
 use url::Url;
 
 const ALICE_CAL: &str = "https://alice.btc.calendar.opentimestamps.org";
@@ -232,6 +233,7 @@ async fn activation_succeeds_while_every_calendar_is_down() {
     for pool in pools() {
         calendars.reply(&pool, Err(down()));
     }
+    let (stop, until) = shutdown::channel();
     let worker = tokio::spawn(worker::run_submitter(
         app.state.db.clone(),
         Arc::clone(&calendars),
@@ -240,6 +242,7 @@ async fn activation_succeeds_while_every_calendar_is_down() {
             submit_poll_interval: Duration::from_millis(5),
             ..settings()
         },
+        until,
     ));
     let hash = activated(&app).await;
     while calendars.submits.load(Ordering::SeqCst) < 3 {
@@ -249,7 +252,13 @@ async fn activation_succeeds_while_every_calendar_is_down() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(card["status"], "active");
     assert_eq!(card["timestamp"]["status"], "queued");
-    worker.abort();
+
+    // Shutdown stops the loop after its current pass.
+    stop.trigger();
+    tokio::time::timeout(Duration::from_secs(5), worker)
+        .await
+        .expect("the submitter stops on shutdown")
+        .expect("joined");
 }
 
 #[tokio::test]

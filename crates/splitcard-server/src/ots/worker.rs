@@ -24,7 +24,7 @@ use super::{
         parse_file, parse_timestamp, serialize_file,
     },
 };
-use crate::{Clock, db::begin_write, db_time};
+use crate::{Clock, db::begin_write, db_time, shutdown::Shutdown};
 
 /// Stored stamping state.
 pub mod status {
@@ -589,33 +589,40 @@ async fn store_upgrades(
     tx.commit().await
 }
 
-/// Runs [`submit_due`] forever. Spawn it as a background task.
+/// Runs [`submit_due`] until `shutdown` is requested; a pass in progress
+/// always finishes. Spawn it as a background task.
 pub async fn run_submitter<C: CalendarClient>(
     pool: SqlitePool,
     client: Arc<C>,
     clock: Arc<dyn Clock>,
     settings: TimestampSettings,
+    mut shutdown: Shutdown,
 ) {
     loop {
         if let Err(error) = submit_due(&pool, &client, clock.as_ref(), &settings).await {
             tracing::error!(%error, "timestamp submit pass failed");
         }
-        tokio::time::sleep(settings.submit_poll_interval).await;
+        if !shutdown.sleep(settings.submit_poll_interval).await {
+            break;
+        }
     }
+    tracing::info!("timestamp submitter stopped");
 }
 
-/// Runs [`upgrade_pending`] every `upgrade_interval` forever. Spawn it as a
-/// background task.
+/// Runs [`upgrade_pending`] every `upgrade_interval` until `shutdown` is
+/// requested; a pass in progress always finishes. Spawn it as a background
+/// task.
 pub async fn run_upgrader<C: CalendarClient>(
     pool: SqlitePool,
     client: Arc<C>,
     clock: Arc<dyn Clock>,
     settings: TimestampSettings,
+    mut shutdown: Shutdown,
 ) {
-    loop {
-        tokio::time::sleep(settings.upgrade_interval).await;
+    while shutdown.sleep(settings.upgrade_interval).await {
         if let Err(error) = upgrade_pending(&pool, &client, clock.as_ref(), &settings).await {
             tracing::error!(%error, "timestamp upgrade pass failed");
         }
     }
+    tracing::info!("timestamp upgrader stopped");
 }

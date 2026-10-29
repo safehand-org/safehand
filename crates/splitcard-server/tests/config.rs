@@ -78,6 +78,9 @@ fn malformed_variables_are_rejected() {
         ("RELAYS", "ws://relay.test"),
         ("RELAYS", "wss://relay.one.test,https://relay.two.test"),
         ("SERVER_SECRET_KEY", "not-a-key"),
+        ("PORT", "http"),
+        ("PORT", "70000"),
+        ("SPLITCARD_DEV", "yes"),
     ] {
         match load(&with(name, value)) {
             Err(ConfigError::Invalid { name: reported, .. }) => {
@@ -139,5 +142,61 @@ fn malformed_ots_settings_are_rejected() {
             }
             other => panic!("{name}={value:?} should be invalid, got {other:?}"),
         }
+    }
+}
+
+#[test]
+fn port_wins_over_bind_addr_and_listens_on_every_interface() {
+    let mut env = with("BIND_ADDR", "127.0.0.1:4000");
+    assert_eq!(
+        load(&env).expect("valid").bind_addr.to_string(),
+        "127.0.0.1:4000"
+    );
+    env.insert("PORT", "10000".to_owned());
+    assert_eq!(
+        load(&env).expect("valid").bind_addr.to_string(),
+        "0.0.0.0:10000"
+    );
+    assert_eq!(
+        load(&with("PORT", "8080"))
+            .expect("valid")
+            .bind_addr
+            .to_string(),
+        "0.0.0.0:8080"
+    );
+}
+
+#[test]
+fn the_public_base_url_must_be_https_unless_in_development() {
+    let insecure = with("PUBLIC_BASE_URL", "http://localhost:3000/api");
+    match load(&insecure) {
+        Err(ConfigError::Invalid { name, reason }) => {
+            assert_eq!(name, "PUBLIC_BASE_URL");
+            assert!(reason.contains("SPLITCARD_DEV"), "{reason}");
+        }
+        other => panic!("http should be refused, got {other:?}"),
+    }
+    for flag in ["1", "true"] {
+        let mut env = insecure.clone();
+        env.insert("SPLITCARD_DEV", flag.to_owned());
+        let config = load(&env).expect("allowed in development");
+        assert_eq!(config.public_base_url, "http://localhost:3000/api");
+        assert!(config.development);
+    }
+    let mut env = insecure;
+    env.insert("SPLITCARD_DEV", "0".to_owned());
+    assert!(load(&env).is_err());
+    assert!(!load(&common::env()).expect("valid").development);
+}
+
+#[test]
+fn a_base_url_may_have_a_path() {
+    for (value, expected) in [
+        ("https://splitcard.test/api", "https://splitcard.test/api"),
+        ("https://splitcard.test/api/", "https://splitcard.test/api"),
+        ("https://splitcard.test/a/b/", "https://splitcard.test/a/b"),
+    ] {
+        let config = load(&with("PUBLIC_BASE_URL", value)).expect("valid");
+        assert_eq!(config.public_base_url, expected, "{value}");
     }
 }

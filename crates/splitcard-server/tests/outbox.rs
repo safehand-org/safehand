@@ -16,7 +16,10 @@ use std::{
 use axum::http::StatusCode;
 use common::{ALICE, BOB, CHIDI, TestApp, app, first_card};
 use nostr::event::Event;
-use splitcard_server::outbox::{self, OutboxSettings, RelayPublisher, RelayResult, process_due};
+use splitcard_server::{
+    outbox::{self, OutboxSettings, RelayPublisher, RelayResult, process_due},
+    shutdown,
+};
 use url::Url;
 
 const ONE: &str = "wss://relay.one.test/";
@@ -258,11 +261,13 @@ async fn a_relay_recovering_later_is_marked_accepted() {
 async fn failing_relays_never_affect_the_api() {
     let app = app().await;
     let publisher = Arc::new(ScriptedPublisher::new(&[ONE, TWO], &[]));
+    let (stop, until) = shutdown::channel();
     let worker = tokio::spawn(outbox::run(
         app.state.db.clone(),
         Arc::clone(&publisher),
         app.clock.clone(),
         settings(),
+        until,
     ));
 
     // Activation succeeds while every publish fails in the background.
@@ -273,7 +278,13 @@ async fn failing_relays_never_affect_the_api() {
     let (status, view) = app.get(&format!("/cards/{hash}")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["status"], "active");
-    worker.abort();
+
+    // Shutdown stops the loop after its current pass.
+    stop.trigger();
+    tokio::time::timeout(Duration::from_secs(5), worker)
+        .await
+        .expect("the outbox loop stops on shutdown")
+        .expect("joined");
 }
 
 #[tokio::test]
