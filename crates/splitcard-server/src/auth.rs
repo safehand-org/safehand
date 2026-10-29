@@ -1,9 +1,10 @@
 //! NIP-98 HTTP authentication.
 //!
-//! Write endpoints take [`Authenticated`], which reads the body (so the
-//! `payload` tag can be checked) and yields the caller's public key with it.
-//! `GET /teams/{id}` and `GET /profiles/{pubkey}` take [`OptionalAuth`] to
-//! decide whether to show the join code and Lightning Addresses.
+//! Write endpoints and `GET /me` take [`Authenticated`], which reads the
+//! body (so the `payload` tag can be checked) and yields the caller's public
+//! key with it. `GET /teams/{id}`, `GET /teams/by-slug/{slug}`,
+//! `GET /invites/{slug}` and `GET /profiles/{pubkey}` take [`OptionalAuth`]
+//! to decide whether to show the join code and Lightning Addresses.
 
 use axum::{
     body::{Bytes, to_bytes},

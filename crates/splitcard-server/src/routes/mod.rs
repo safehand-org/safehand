@@ -2,6 +2,10 @@
 
 /// `/teams/{id}/cards`, `/teams/{id}/card` and `/cards/...`.
 pub mod cards;
+/// `/invites/{slug}`.
+pub mod invites;
+/// `/me`.
+pub mod me;
 /// `/me/profile` and `/profiles/{pubkey}`.
 pub mod profiles;
 /// `/teams` and `/teams/...`.

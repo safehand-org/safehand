@@ -48,6 +48,33 @@ async fn a_member_with_a_profile_creates_a_team_with_a_valid_slug() {
 }
 
 #[tokio::test]
+async fn teams_can_be_found_by_slug() {
+    let app = app().await;
+    let team_id = app.alice_bob_chidi().await;
+    let by_id = format!("/teams/{team_id}");
+    let by_slug = format!("/teams/by-slug/{TEAM_SLUG}");
+    assert_eq!(app.get(&by_slug).await, app.get(&by_id).await);
+    let (status, member) = app.authed(BOB, Method::GET, &by_slug, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(member["id"], team_id.as_str());
+    assert_eq!(member["join_code"].as_str().map(str::len), Some(32));
+    let (_, public) = app.get(&by_slug).await;
+    assert!(public.get("join_code").is_none());
+    assert!(!public.to_string().contains('@'), "{public}");
+
+    for path in [
+        "/teams/by-slug/no-such-team",
+        "/teams/by-slug/Lightning-Llamas",
+    ] {
+        assert_error(
+            &app.get(path).await,
+            StatusCode::NOT_FOUND,
+            "team_not_found",
+        );
+    }
+}
+
+#[tokio::test]
 async fn slugs_must_follow_the_rules() {
     let app = app().await;
     app.profile_ok(ALICE).await;

@@ -58,16 +58,110 @@ pub(crate) fn is_stale(status: &str, supersedes: Option<&str>, active: Option<&s
     status == card_state::DRAFT && supersedes != active
 }
 
+/// A stored card.
 #[derive(Debug, FromRow)]
-struct CardRow {
-    hash: String,
+pub(crate) struct CardRow {
+    pub(crate) hash: String,
+    pub(crate) team_id: i64,
+    pub(crate) canonical_json: String,
+    pub(crate) supersedes: Option<String>,
+    pub(crate) status: String,
+    pub(crate) created_by: String,
+    pub(crate) created_at: i64,
+    pub(crate) activated_at: Option<i64>,
+}
+
+/// A stored card, parsed, with its members' signing status.
+#[derive(Debug)]
+pub(crate) struct LoadedCard {
+    pub(crate) row: CardRow,
+    pub(crate) card: Card,
+    pub(crate) signing: SigningView,
+    /// Unix seconds of the latest stored signature, if any.
+    pub(crate) last_signed_at: Option<i64>,
+}
+
+/// The cards a team's screens show: its active card, and the newest draft
+/// that can still activate (one whose `supersedes` is the active card).
+#[derive(Debug, Default)]
+pub(crate) struct TeamCards {
+    pub(crate) active: Option<LoadedCard>,
+    pub(crate) draft: Option<LoadedCard>,
+}
+
+pub(crate) async fn team_cards(
+    conn: &mut SqliteConnection,
     team_id: i64,
-    canonical_json: String,
-    supersedes: Option<String>,
-    status: String,
-    created_by: String,
-    created_at: i64,
-    activated_at: Option<i64>,
+    active_card_hash: Option<&str>,
+) -> Result<TeamCards, ApiError> {
+    let active = match active_card_hash {
+        Some(hash) => load_card(conn, hash).await?,
+        None => None,
+    };
+    let draft: Option<CardRow> = sqlx::query_as(
+        "SELECT hash, team_id, canonical_json, supersedes, status, created_by, created_at, \
+         activated_at FROM cards WHERE team_id = ? AND status = 'draft' AND supersedes IS ? \
+         ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    )
+    .bind(team_id)
+    .bind(active_card_hash)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let mut cards = TeamCards::default();
+    if let Some(row) = active {
+        cards.active = Some(loaded_card(conn, row).await?);
+    }
+    if let Some(row) = draft {
+        cards.draft = Some(loaded_card(conn, row).await?);
+    }
+    Ok(cards)
+}
+
+async fn loaded_card(conn: &mut SqliteConnection, row: CardRow) -> Result<LoadedCard, ApiError> {
+    let card = stored_card(&row.canonical_json)?;
+    let events = stored_events(&signature_jsons(conn, &row.hash).await?)?;
+    let signing = signing_view(&card, &events)?;
+    let last_signed_at =
+        sqlx::query_scalar("SELECT max(received_at) FROM card_signatures WHERE card_hash = ?")
+            .bind(&row.hash)
+            .fetch_one(conn)
+            .await?;
+    Ok(LoadedCard {
+        row,
+        card,
+        signing,
+        last_signed_at,
+    })
+}
+
+/// `card_status` over the signatures of the card's own members. Removed
+/// members of a superseded card sign too; they count for `supersede`, not
+/// for this card's member status.
+fn signing_view(card: &Card, events: &[Event]) -> Result<SigningView, ApiError> {
+    let members: BTreeSet<&str> = card.members.iter().map(|m| m.pubkey.as_str()).collect();
+    let member_events: Vec<Event> = events
+        .iter()
+        .filter(|event| members.contains(event.pubkey.to_hex().as_str()))
+        .cloned()
+        .collect();
+    let report = card_status(card, &member_events)?;
+    let (state, signed, missing) = match report.status {
+        CardStatus::Draft { signed, missing } => ("draft", signed, missing),
+        CardStatus::Active { signed } => ("active", signed, Vec::new()),
+    };
+    let rejected = report
+        .rejected
+        .into_iter()
+        .map(|(event_id, error)| {
+            json!({ "event_id": event_id.to_hex(), "error": ApiError::from(error).to_json() })
+        })
+        .collect();
+    Ok(SigningView {
+        state,
+        signed,
+        missing,
+        rejected,
+    })
 }
 
 /// A card in API responses.
@@ -160,7 +254,7 @@ pub struct SupersedeView {
     pub error: Option<Value>,
 }
 
-async fn load_card(
+pub(crate) async fn load_card(
     conn: &mut SqliteConnection,
     hash: &str,
 ) -> Result<Option<CardRow>, sqlx::Error> {
@@ -227,26 +321,7 @@ async fn card_view(conn: &mut SqliteConnection, row: CardRow) -> Result<CardView
     let card = stored_card(&row.canonical_json)?;
     let signatures = signature_jsons(conn, &row.hash).await?;
     let events = stored_events(&signatures)?;
-    // Removed members of a superseded card sign too; they count for
-    // `supersede`, not for this card's own member status.
-    let members: BTreeSet<String> = card.members.iter().map(|m| m.pubkey.clone()).collect();
-    let member_events: Vec<Event> = events
-        .iter()
-        .filter(|event| members.contains(&event.pubkey.to_hex()))
-        .cloned()
-        .collect();
-    let report = card_status(&card, &member_events)?;
-    let (state, signed, missing) = match report.status {
-        CardStatus::Draft { signed, missing } => ("draft", signed, missing),
-        CardStatus::Active { signed } => ("active", signed, Vec::new()),
-    };
-    let rejected = report
-        .rejected
-        .into_iter()
-        .map(|(event_id, error)| {
-            json!({ "event_id": event_id.to_hex(), "error": ApiError::from(error).to_json() })
-        })
-        .collect();
+    let signing = signing_view(&card, &events)?;
     let supersede =
         old_card(conn, &card)
             .await?
@@ -283,12 +358,7 @@ async fn card_view(conn: &mut SqliteConnection, row: CardRow) -> Result<CardView
         created_by: row.created_by,
         created_at: row.created_at,
         activated_at: row.activated_at,
-        signing: SigningView {
-            state,
-            signed,
-            missing,
-            rejected,
-        },
+        signing,
         supersede,
         timestamp,
         signatures,

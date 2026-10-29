@@ -92,9 +92,12 @@ pub fn router(state: AppState) -> Router {
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]);
     Router::new()
         .route("/health", get(health))
+        .route("/me", get(routes::me::get))
         .route("/me/profile", put(routes::profiles::put_mine))
         .route("/profiles/{pubkey}", get(routes::profiles::get))
+        .route("/invites/{slug}", get(routes::invites::get))
         .route("/teams", post(routes::teams::create))
+        .route("/teams/by-slug/{slug}", get(routes::teams::get_by_slug))
         .route("/teams/{id}", get(routes::teams::get))
         .route("/teams/{id}/join", post(routes::teams::join))
         .route("/teams/{id}/submission", put(routes::teams::set_submission))

@@ -122,6 +122,23 @@ pub(crate) async fn load_team(
     .await
 }
 
+pub(crate) async fn load_team_by_slug(
+    conn: &mut SqliteConnection,
+    slug: &str,
+) -> Result<Option<TeamRow>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, slug, name, event_label, join_code, submission_url, active_card_hash, \
+         created_at FROM teams WHERE slug = ?",
+    )
+    .bind(slug)
+    .fetch_optional(conn)
+    .await
+}
+
+pub(crate) fn team_slug_not_found() -> ApiError {
+    ApiError::not_found("team_not_found", "no team with this slug")
+}
+
 pub(crate) async fn load_participants(
     conn: &mut SqliteConnection,
     team_id: i64,
@@ -164,6 +181,11 @@ async fn team_view(
             })
             .collect(),
     })
+}
+
+/// Whether `presented` is the team's join code.
+pub(crate) fn join_code_matches(team: &TeamRow, presented: &str) -> bool {
+    constant_time_eq(team.join_code.as_bytes(), presented.as_bytes())
 }
 
 /// 128 random bits from the OS RNG, as 32 hex characters.
@@ -261,7 +283,7 @@ pub async fn join(
     let team = load_team(&mut tx, team_id)
         .await?
         .ok_or_else(team_not_found)?;
-    if !constant_time_eq(team.join_code.as_bytes(), request.join_code.as_bytes()) {
+    if !join_code_matches(&team, &request.join_code) {
         return Err(forbidden("invalid_join_code", "join code is wrong"));
     }
     require_profile(&mut tx, &auth.pubkey).await?;
@@ -296,6 +318,24 @@ pub async fn get(
     let team = load_team(&mut conn, team_id)
         .await?
         .ok_or_else(team_not_found)?;
+    Ok(Json(team_view(&mut conn, team, viewer.as_deref()).await?))
+}
+
+/// `GET /teams/by-slug/{slug}`: the same view as `GET /teams/{id}`, found by
+/// slug.
+///
+/// # Errors
+///
+/// `team_not_found` (404), or an `auth_*` code (401) for a bad header.
+pub async fn get_by_slug(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    OptionalAuth(viewer): OptionalAuth,
+) -> Result<Json<TeamView>, ApiError> {
+    let mut conn = state.db.acquire().await?;
+    let team = load_team_by_slug(&mut conn, &slug)
+        .await?
+        .ok_or_else(team_slug_not_found)?;
     Ok(Json(team_view(&mut conn, team, viewer.as_deref()).await?))
 }
 

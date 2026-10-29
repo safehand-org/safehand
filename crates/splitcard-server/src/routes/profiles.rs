@@ -51,7 +51,7 @@ pub struct ProfileView {
 }
 
 impl ProfileView {
-    fn new(row: ProfileRow, show_private: bool) -> Self {
+    pub(crate) fn new(row: ProfileRow, show_private: bool) -> Self {
         Self {
             pubkey: row.pubkey,
             name: row.name,
