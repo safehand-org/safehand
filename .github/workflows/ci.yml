@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy, llvm-tools
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+      # secp256k1-sys compiles C for wasm32; its archive needs llvm-ar to get a
+      # symbol index the wasm linker can read.
+      - name: Use llvm-ar for wasm32
+        run: |
+          echo "AR_wasm32_unknown_unknown=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-ar" >> "$GITHUB_ENV"
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build -p splitcard-core --target wasm32-unknown-unknown
+      - run: wasm-pack test --node crates/splitcard-wasm
+      - run: wasm-pack build crates/splitcard-wasm --target web
+      # Loads the --target web pkg/ above via initSync; no second build needed.
+      - run: node crates/splitcard-wasm/tests/smoke.mjs

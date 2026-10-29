@@ -1,0 +1,59 @@
+// Smoke test of the real JS boundary, against the browser package.
+//
+//   wasm-pack build crates/splitcard-wasm --target web
+//   node crates/splitcard-wasm/tests/smoke.mjs
+//
+// This loads the same `--target web` pkg/ the frontend ships, initialising it
+// synchronously from the .wasm bytes instead of fetching them, so no separate
+// `--target nodejs` build is needed. Exits non-zero on any mismatch.
+
+import { readFileSync } from "node:fs";
+import { initSync, compute_payouts, display_basis_points } from "../pkg/splitcard_wasm.js";
+
+const wasm = readFileSync(new URL("../pkg/splitcard_wasm_bg.wasm", import.meta.url));
+initSync({ module: wasm });
+
+let failures = 0;
+function check(label, actual, expected) {
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a === e) {
+    console.log(`ok   ${label}`);
+  } else {
+    failures += 1;
+    console.error(`FAIL ${label}\n  expected ${e}\n  actual   ${a}`);
+  }
+}
+
+// A card is passed as a JSON string that only Rust parses. It is written out
+// by hand here, never built with JSON.stringify, to model that rule.
+const pk = (n) => n.toString(16).padStart(64, "0");
+const card = `{"version":1,"card_id":"btcpp-lagos-2026/team-42","event":"BTC++ Lagos 2026","team":"Team 42","members":[{"pubkey":"${pk(1)}","name":"Ada","weight":36,"payout":{"lightning":{"address":"ada@example.com"}}},{"pubkey":"${pk(2)}","name":"Bola","weight":35,"payout":{"lightning":{"address":"bola@example.org"}}},{"pubkey":"${pk(3)}","name":"Chidi","weight":29,"payout":{"lightning":{"address":"chidi@example.net"}}}],"rules":{"peer_review":{"max_shift_points":10}},"supersedes":"${"a".repeat(64)}"}`;
+
+check("compute_payouts 100,001 sats at 36/35/29", compute_payouts(card, "100001"), [
+  { pubkey: pk(1), amount_sats: "36001" },
+  { pubkey: pk(2), amount_sats: "35000" },
+  { pubkey: pk(3), amount_sats: "29000" },
+]);
+check("display_basis_points", display_basis_points(card), [3600, 3500, 2900]);
+
+try {
+  compute_payouts(card, "1e3");
+  failures += 1;
+  console.error("FAIL compute_payouts(\"1e3\") did not throw");
+} catch (error) {
+  check("thrown error is a plain { code, message, details } object", Object.keys(error).sort(), [
+    "code",
+    "details",
+    "message",
+  ]);
+  check("thrown error code", error.code, "invalid_amount");
+  check("thrown error details", error.details, { value: "1e3" });
+  check("thrown error message is a string", typeof error.message, "string");
+}
+
+if (failures > 0) {
+  console.error(`${failures} smoke check(s) failed`);
+  process.exit(1);
+}
+console.log("smoke test passed");

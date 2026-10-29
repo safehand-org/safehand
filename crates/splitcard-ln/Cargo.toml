@@ -1,0 +1,29 @@
+[package]
+name = "splitcard-ln"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+futures.workspace = true
+hex.workspace = true
+lightning-invoice.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+# `net` provides the DNS lookup used to vet resolved addresses.
+tokio = { workspace = true, features = ["net"] }
+url.workspace = true
+
+[dev-dependencies]
+# The key crate lightning-invoice 0.34.1 signs with (bitcoin::secp256k1), same
+# version, used only to sign test invoices.
+bitcoin = { version = "0.32.2", default-features = false, features = ["std", "secp-recovery"] }
+tokio = { workspace = true, features = ["net", "time", "io-util"] }
+wiremock.workspace = true

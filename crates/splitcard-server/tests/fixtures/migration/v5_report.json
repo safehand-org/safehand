@@ -1,0 +1,274 @@
+{
+  "canonical_card_json": "{\"card_id\":\"llamas-split\",\"event\":\"nostr-hack-2026\",\"members\":[{\"name\":\"Alice\",\"payout\":{\"lightning\":{\"address\":\"alice@blink.sv\"}},\"pubkey\":\"1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\",\"weight\":36},{\"name\":\"Bob\",\"payout\":{\"lightning\":{\"address\":\"bob@getalby.com\"}},\"pubkey\":\"4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766\",\"weight\":35},{\"name\":\"Chidi\",\"payout\":{\"lightning\":{\"address\":\"chidi@walletofsatoshi.com\"}},\"pubkey\":\"531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337\",\"weight\":29}],\"rules\":{\"peer_review\":null},\"supersedes\":null,\"team\":\"Lightning Llamas\",\"version\":1}",
+  "card_hash": "f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff",
+  "checks": [
+    {
+      "details": {
+        "computed": "f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff",
+        "expected": "f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff",
+        "stored_json_is_canonical": true
+      },
+      "name": "card_hash_matches",
+      "result": "pass"
+    },
+    {
+      "details": null,
+      "name": "card_valid",
+      "result": "pass"
+    },
+    {
+      "details": {
+        "events": [
+          {
+            "error": null,
+            "event_id": "ed6fe90ab875e5302b3a503b8ca3734002f16ad4102562c2b0c158ce973b7e15",
+            "pubkey": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+            "result": "pass"
+          },
+          {
+            "error": null,
+            "event_id": "5d71c46df2e68bf7231a4fe0aed9a6922defc06a35efe6cd1001c3e1a4361c7a",
+            "pubkey": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+            "result": "pass"
+          },
+          {
+            "error": null,
+            "event_id": "d6cfb099b9746d5ca5ba8645fe26299c97e3bac96a8f460cb081ad235f8f0427",
+            "pubkey": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
+            "result": "pass"
+          }
+        ]
+      },
+      "name": "signatures_valid",
+      "result": "pass"
+    },
+    {
+      "details": {
+        "signed": [
+          {
+            "name": "Alice",
+            "pubkey": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+          },
+          {
+            "name": "Bob",
+            "pubkey": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
+          },
+          {
+            "name": "Chidi",
+            "pubkey": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337"
+          }
+        ]
+      },
+      "name": "all_members_signed",
+      "result": "pass"
+    },
+    {
+      "details": {
+        "implied": "active",
+        "stored": "active"
+      },
+      "name": "status_consistent",
+      "result": "pass"
+    },
+    {
+      "details": null,
+      "name": "supersede_valid",
+      "result": "not_applicable"
+    },
+    {
+      "details": {
+        "events": [
+          {
+            "accepted": true,
+            "event_id": "56fcceab26af69d15486ca47e8ad645200d6aef98186d1ed8600bbfd2188e3b9",
+            "kind": "card",
+            "problems": [],
+            "queued": true,
+            "relays": [
+              {
+                "attempts": 1,
+                "last_error": null,
+                "relay": "wss://relay.one.test/",
+                "status": "accepted"
+              }
+            ],
+            "server_pubkey": "5f64993ccb4044a005e82ba07e78b2815a6a17aa7d5ad62fd59d519778072483"
+          },
+          {
+            "accepted": true,
+            "event_id": "ed6fe90ab875e5302b3a503b8ca3734002f16ad4102562c2b0c158ce973b7e15",
+            "kind": "signature",
+            "queued": true,
+            "relays": [
+              {
+                "attempts": 1,
+                "last_error": null,
+                "relay": "wss://relay.one.test/",
+                "status": "accepted"
+              }
+            ]
+          },
+          {
+            "accepted": true,
+            "event_id": "5d71c46df2e68bf7231a4fe0aed9a6922defc06a35efe6cd1001c3e1a4361c7a",
+            "kind": "signature",
+            "queued": true,
+            "relays": [
+              {
+                "attempts": 1,
+                "last_error": null,
+                "relay": "wss://relay.one.test/",
+                "status": "accepted"
+              }
+            ]
+          },
+          {
+            "accepted": true,
+            "event_id": "d6cfb099b9746d5ca5ba8645fe26299c97e3bac96a8f460cb081ad235f8f0427",
+            "kind": "signature",
+            "queued": true,
+            "relays": [
+              {
+                "attempts": 1,
+                "last_error": null,
+                "relay": "wss://relay.one.test/",
+                "status": "accepted"
+              }
+            ]
+          }
+        ],
+        "note": "Relay answers as recorded when this server published; fetch the event ids from any relay to confirm."
+      },
+      "name": "published_to_relays",
+      "result": "pass"
+    },
+    {
+      "details": {
+        "bitcoin_block_height": 912345,
+        "note": "This server does not check block headers against Bitcoin. A Bitcoin attestation here means a calendar supplied one; verify it independently with the OpenTimestamps client against your own Bitcoin node.",
+        "ots_url": "https://splitcard.test/cards/f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff/timestamp.ots",
+        "pending_calendars": [],
+        "proof_digest": "f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff",
+        "verify_command": "ots verify f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff.json.ots",
+        "verify_steps": "Save canonical_card_json byte for byte as f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff.json, download the proof as f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff.json.ots next to it, then run: ots verify f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff.json.ots"
+      },
+      "name": "timestamp",
+      "result": "pass"
+    },
+    {
+      "details": {
+        "reason": "no payout concerns this card"
+      },
+      "name": "payout_amounts_match_card",
+      "result": "not_applicable"
+    },
+    {
+      "details": {
+        "reason": "no payout concerns this card"
+      },
+      "name": "payout_card_matches",
+      "result": "not_applicable"
+    },
+    {
+      "details": {
+        "reason": "no payout concerns this card"
+      },
+      "name": "payments_proven",
+      "result": "not_applicable"
+    }
+  ],
+  "overall": "verified",
+  "payout": null,
+  "relays": [
+    {
+      "deliveries": [
+        {
+          "attempts": 1,
+          "last_error": null,
+          "relay": "wss://relay.one.test/",
+          "status": "accepted"
+        }
+      ],
+      "event_id": "56fcceab26af69d15486ca47e8ad645200d6aef98186d1ed8600bbfd2188e3b9",
+      "kind": "card",
+      "pubkey": "5f64993ccb4044a005e82ba07e78b2815a6a17aa7d5ad62fd59d519778072483",
+      "server_pubkey": "5f64993ccb4044a005e82ba07e78b2815a6a17aa7d5ad62fd59d519778072483",
+      "status": "sent"
+    },
+    {
+      "deliveries": [
+        {
+          "attempts": 1,
+          "last_error": null,
+          "relay": "wss://relay.one.test/",
+          "status": "accepted"
+        }
+      ],
+      "event_id": "ed6fe90ab875e5302b3a503b8ca3734002f16ad4102562c2b0c158ce973b7e15",
+      "kind": "signature",
+      "pubkey": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+      "status": "sent"
+    },
+    {
+      "deliveries": [
+        {
+          "attempts": 1,
+          "last_error": null,
+          "relay": "wss://relay.one.test/",
+          "status": "accepted"
+        }
+      ],
+      "event_id": "5d71c46df2e68bf7231a4fe0aed9a6922defc06a35efe6cd1001c3e1a4361c7a",
+      "kind": "signature",
+      "pubkey": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+      "status": "sent"
+    },
+    {
+      "deliveries": [
+        {
+          "attempts": 1,
+          "last_error": null,
+          "relay": "wss://relay.one.test/",
+          "status": "accepted"
+        }
+      ],
+      "event_id": "d6cfb099b9746d5ca5ba8645fe26299c97e3bac96a8f460cb081ad235f8f0427",
+      "kind": "signature",
+      "pubkey": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
+      "status": "sent"
+    }
+  ],
+  "signatures": [
+    {
+      "error": null,
+      "event": "{\"id\":\"ed6fe90ab875e5302b3a503b8ca3734002f16ad4102562c2b0c158ce973b7e15\",\"pubkey\":\"1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\",\"created_at\":1780000000,\"kind\":30078,\"tags\":[[\"d\",\"f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff\"],[\"splitcard\",\"f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff\"]],\"content\":\"\",\"sig\":\"109ccf364b2bf6e6661384c443ea44a6fc55eda3a992d9fe7ac742e87dc115b811cb9b4cb4382b86af370f62b157778d4ecab8a80e207d4794449c96b79d610d\"}",
+      "member_name": "Alice",
+      "result": "pass",
+      "signer": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+    },
+    {
+      "error": null,
+      "event": "{\"id\":\"5d71c46df2e68bf7231a4fe0aed9a6922defc06a35efe6cd1001c3e1a4361c7a\",\"pubkey\":\"4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766\",\"created_at\":1780000000,\"kind\":30078,\"tags\":[[\"d\",\"f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff\"],[\"splitcard\",\"f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff\"]],\"content\":\"\",\"sig\":\"4fe18b578f39a90e09acf50b1988bf0be38b9907b4da72e8ec9a9812ed0fd4aeb6c686af7ed71b7983d50de27388a229c99d95a9d8ca86396673316c455de71a\"}",
+      "member_name": "Bob",
+      "result": "pass",
+      "signer": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
+    },
+    {
+      "error": null,
+      "event": "{\"id\":\"d6cfb099b9746d5ca5ba8645fe26299c97e3bac96a8f460cb081ad235f8f0427\",\"pubkey\":\"531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337\",\"created_at\":1780000000,\"kind\":30078,\"tags\":[[\"d\",\"f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff\"],[\"splitcard\",\"f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff\"]],\"content\":\"\",\"sig\":\"a862a7c19ce0895c3d4ba537bf92b4bcf0d8318396f0410f1897b4b0977fc60c7ee8d9e0beabc5793ffd8e50fd4564642196548610073d27d36a2ff38bd07384\"}",
+      "member_name": "Chidi",
+      "result": "pass",
+      "signer": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337"
+    }
+  ],
+  "status": "active",
+  "supersede_chain": {
+    "next": null,
+    "previous": null
+  },
+  "timestamp": {
+    "bitcoin_block_height": 912345,
+    "ots_url": "https://splitcard.test/cards/f59e526ba0df549ea89caa3a5a05ce9d163ce594e4f5ca1056b4827eafa4cfff/timestamp.ots",
+    "status": "complete"
+  }
+}

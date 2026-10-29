@@ -1,0 +1,6 @@
+[toolchain]
+channel = "1.98.1"
+# `llvm-tools` provides `llvm-ar`, which can index the wasm32 objects that
+# secp256k1-sys compiles; Apple's `ar` cannot.
+components = ["rustfmt", "clippy", "llvm-tools"]
+targets = ["wasm32-unknown-unknown"]

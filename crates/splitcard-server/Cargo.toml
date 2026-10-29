@@ -1,0 +1,42 @@
+[package]
+name = "splitcard-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+# NIP-98 header decoding: standard alphabet, strict padding.
+base64 = "0.22.1"
+hex.workspace = true
+# Event parsing and server signing; the same nostr splitcard-core uses, plus
+# the OS RNG for join codes and signing.
+nostr = { version = "0.45.5", default-features = false, features = ["std", "rand", "os-rng"] }
+# Relay publishing only.
+nostr-sdk = "0.45.4"
+# OpenTimestamps calendar requests only (rustls, no native-tls).
+reqwest.workspace = true
+# Only to pick the process-wide TLS provider: nostr-sdk and sqlx bring ring,
+# reqwest brings aws-lc-rs, and with both rustls cannot choose on its own.
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+splitcard-core = { path = "../splitcard-core" }
+splitcard-ln = { path = "../splitcard-ln" }
+sqlx = { version = "0.9.0", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros", "tls-rustls"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time", "net", "signal"] }
+tower-http = { version = "0.6.11", features = ["trace", "cors"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+# Only to check core errors get the same codes and details as from WASM.
+splitcard-wasm = { path = "../splitcard-wasm" }
+tower = { version = "0.5.3", features = ["util"] }
