@@ -1,4 +1,8 @@
+import Link from "next/link";
 import type { HomeAttention } from "./types";
+
+const actionClass =
+  "inline-flex h-10 shrink-0 items-center rounded-pill bg-sheet px-5 text-[13px] font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sheet/50";
 
 export function AttentionCard({ attention }: { attention: HomeAttention }) {
   return (
@@ -17,12 +21,15 @@ export function AttentionCard({ attention }: { attention: HomeAttention }) {
         <p className="text-[10px] font-medium tracking-[0.14em] text-muted uppercase">
           {attention.teammatesLabel}
         </p>
-        <button
-          type="button"
-          className="h-10 shrink-0 rounded-pill bg-sheet px-5 text-[13px] font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sheet/50"
-        >
-          {attention.actionLabel}
-        </button>
+        {attention.href ? (
+          <Link href={attention.href} prefetch={false} className={actionClass}>
+            {attention.actionLabel}
+          </Link>
+        ) : (
+          <button type="button" className={actionClass}>
+            {attention.actionLabel}
+          </button>
+        )}
       </div>
     </article>
   );

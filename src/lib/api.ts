@@ -39,9 +39,12 @@ async function authorization(
   body: Uint8Array<ArrayBuffer> | null,
 ): Promise<string> {
   const wasm = await loadWasm();
+  // The event id must be unique (the server refuses replays), and two
+  // requests to the same URL in the same second would otherwise share one.
   const tags = [
     ["u", url],
     ["method", method],
+    ["nonce", hex(randomBytes().buffer as ArrayBuffer)],
   ];
   if (body && body.length > 0) {
     tags.push(["payload", hex(await crypto.subtle.digest("SHA-256", body))]);
@@ -112,12 +115,44 @@ export type Profile = {
   updated_at?: number;
 };
 
+/** One of the viewer's teams, from `GET /me`. Sats are decimal strings. */
+export type TeamSummary = {
+  team_id: string;
+  slug: string;
+  name: string;
+  event_label: string;
+  list_status: "draft" | "locked" | "paid-out";
+  phase: "waiting-for-prize" | "prize-set-waiting" | "payouts-in-progress" | null;
+  you_received_sats: string | null;
+  card_hash: string | null;
+  signed_count: number | null;
+  member_count: number | null;
+  participant_count: number;
+  you_must_sign: boolean;
+  joined_at: number;
+  updated_at: number;
+};
+
+/** The newest card waiting for the viewer's signature. */
+export type NeedsSignature = {
+  team_id: string;
+  slug: string;
+  name: string;
+  card_hash: string;
+  inviter_name: string;
+  /** The viewer's share; 10,000 is the whole prize. */
+  share_basis_points: number;
+  member_count: number;
+  invited_at: number;
+  join_code: string;
+};
+
 export type Me = {
   pubkey: string;
   profile: Profile | null;
-  teams: unknown[];
-  needs_signature: unknown;
-  summary: { received_sats: number; paid_team_count: number; cancelled_count: number };
+  teams: TeamSummary[];
+  needs_signature: NeedsSignature | null;
+  summary: { received_sats: string; paid_team_count: number };
 };
 
 // Calls.

@@ -1,27 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import { DashedNote } from "@/components/join/JoinLayout";
+import { cardsSummaryFrom, signatureRequestFrom, splitCardsFrom } from "@/lib/account";
+import { useMe } from "@/lib/useMe";
 import { CardList } from "./CardList";
 import { CardsHeader } from "./CardsHeader";
 import { SignatureCard } from "./SignatureCard";
 import { SummaryCard } from "./SummaryCard";
-import {
-  cardFilters,
-  cardsForFilter,
-  cardsSample,
-  type CardFilterId,
-} from "./types";
+import { cardFilters, cardsForFilter, type CardFilterId } from "./types";
 
 export function CardsView() {
+  const account = useMe();
   const [filter, setFilter] = useState<CardFilterId>("all");
-  const cards = cardsForFilter(filter, cardsSample);
+  const me = account.status === "ready" ? account.me : null;
+  const cards = me ? cardsForFilter(filter, splitCardsFrom(me)) : null;
+  const signature = me ? signatureRequestFrom(me.needs_signature) : null;
 
   return (
     <>
       <section className="rounded-b-sheet bg-sheet px-5 pt-5 pb-5 text-ink">
         <CardsHeader />
-        <SummaryCard />
-        <SignatureCard />
+        {me ? <SummaryCard summary={cardsSummaryFrom(me)} /> : null}
+        {signature ? <SignatureCard request={signature} /> : null}
       </section>
 
       <div className="px-5 pt-5 pb-6">
@@ -45,7 +46,17 @@ export function CardsView() {
             );
           })}
         </div>
-        <CardList cards={cards} />
+        {cards ? <CardList cards={cards} /> : null}
+        {account.status === "error" ? (
+          <div className="mt-6">
+            <DashedNote>
+              {account.message}{" "}
+              <button type="button" onClick={account.retry} className="text-[#34b6ee]">
+                Try again
+              </button>
+            </DashedNote>
+          </div>
+        ) : null}
       </div>
     </>
   );

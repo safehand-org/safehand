@@ -10,6 +10,8 @@ export type HomeAttention = {
   timeAgo: string;
   teammatesLabel: string;
   actionLabel: string;
+  /** Where the action goes: the card's invite link. */
+  href?: string;
 };
 
 export type HomeActivityItem = {

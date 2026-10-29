@@ -5,7 +5,7 @@ export type SplitCard = {
   title: string;
   detail: string;
   status: CardStatus;
-  /** TODO: payout amount from the payouts API */
+  /** Sats paid to the viewer, from `GET /me`. */
   amount?: number;
   currency?: "sats" | "NGN";
   /** Payout-flow phase opened from this row. */
@@ -26,31 +26,6 @@ export const cardFilters = [
 ] as const;
 
 export type CardFilterId = (typeof cardFilters)[number]["id"];
-
-export const cardsSample: SplitCard[] = [
-  {
-    id: "kano-hack-night",
-    title: "Kano Hack Night",
-    detail: "1 of 3 signed",
-    status: "draft",
-  },
-  {
-    id: "lagos-build",
-    title: "Lagos Build",
-    detail: "Everyone has signed. Waiting for the prize",
-    status: "locked",
-  },
-  {
-    id: "team-42",
-    title: "Team 42",
-    detail: "250,000 sats paid to you",
-    status: "paid-out",
-    amount: 250_000,
-    currency: "sats",
-    phase: "payouts-in-progress",
-    href: "/card/team-42",
-  },
-];
 
 export function cardsForFilter(filter: CardFilterId, cards: SplitCard[]) {
   if (filter === "all") return cards;
