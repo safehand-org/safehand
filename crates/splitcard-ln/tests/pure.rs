@@ -558,6 +558,12 @@ fn decoding_skips_pay_request_and_clock_checks_but_not_the_signature() {
     let decoded = decode_invoice(&bolt11).expect("decodes");
     assert_eq!(decoded.payment_hash, hex::encode(payment_hash()));
     assert_eq!(decoded.amount_msat, Some(21_000));
+    assert_eq!(
+        decoded.description_hash,
+        Some(hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+            METADATA
+        )))
+    );
     assert_eq!(decoded.currency, "bc");
     assert_eq!(decoded.expires_at_unix, CREATED_AT + EXPIRY_SECS);
 

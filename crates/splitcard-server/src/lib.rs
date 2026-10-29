@@ -1,4 +1,5 @@
-//! HTTP API for Split Card: member profiles, teams, cards and signatures.
+//! HTTP API for Split Card: member profiles, teams, cards, signatures, and
+//! prizes with preimage-proved payouts.
 //!
 //! All card logic (validation, hashing, signature checks, status and
 //! superseding) comes from `splitcard-core`; this crate only stores cards and
@@ -103,6 +104,12 @@ pub fn router(state: AppState) -> Router {
         .route("/teams/{id}/submission", put(routes::teams::set_submission))
         .route("/teams/{id}/cards", post(routes::cards::submit))
         .route("/teams/{id}/card", get(routes::cards::active))
+        .route("/teams/{id}/prize", put(routes::payouts::put_prize))
+        .route("/teams/{id}/payout", get(routes::payouts::get))
+        .route(
+            "/teams/{id}/payout/items/{index}/payment",
+            post(routes::payouts::record_payment),
+        )
         .route("/cards/{hash}", get(routes::cards::get))
         .route("/cards/{hash}/signatures", post(routes::cards::sign))
         .route("/cards/{hash}/timestamp", get(routes::timestamps::status))

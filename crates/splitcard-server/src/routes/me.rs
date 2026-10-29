@@ -7,6 +7,7 @@ use sqlx::SqliteConnection;
 
 use super::{
     cards::{LoadedCard, TeamCards, team_cards},
+    payouts::{PayoutState, load_payout, phase},
     profiles::{ProfileView, load_profile},
     teams::{TeamRow, load_participants, load_team},
 };
@@ -18,10 +19,9 @@ pub mod list_status {
     pub const DRAFT: &str = "draft";
     /// An active card: everyone signed.
     pub const LOCKED: &str = "locked";
+    /// An active card with at least one member paid.
+    pub const PAID_OUT: &str = "paid-out";
 }
-
-/// The only payout phase while the server records no prizes.
-pub const WAITING_FOR_PRIZE: &str = "waiting-for-prize";
 
 /// `GET /me` response.
 #[derive(Debug, Serialize)]
@@ -34,6 +34,17 @@ pub struct MeView {
     pub teams: Vec<TeamSummary>,
     /// The newest card waiting for the caller's signature, if any.
     pub needs_signature: Option<NeedsSignature>,
+    /// Totals over the caller's teams.
+    pub summary: Summary,
+}
+
+/// Totals for the cards screen.
+#[derive(Debug, Serialize)]
+pub struct Summary {
+    /// Sats paid to the caller across all teams, as a string.
+    pub received_sats: String,
+    /// Teams whose payout to the caller is recorded as paid.
+    pub paid_team_count: usize,
 }
 
 /// One of the caller's teams.
@@ -47,10 +58,14 @@ pub struct TeamSummary {
     pub name: String,
     /// Event label.
     pub event_label: String,
-    /// `draft` until the team has an active card, then `locked`.
+    /// `draft` until the team has an active card, then `locked`, then
+    /// `paid-out` once any member is paid.
     pub list_status: &'static str,
-    /// `waiting-for-prize` when locked, else `null`.
+    /// With an active card, the payout phase: `waiting-for-prize`,
+    /// `prize-set-waiting` or `payouts-in-progress`. Else `null`.
     pub phase: Option<&'static str>,
+    /// Sats paid to the caller for this team, as a string, else `null`.
+    pub you_received_sats: Option<String>,
     /// The card the row describes: the active card, else the newest draft
     /// that can still activate, else `null`.
     pub card_hash: Option<String>,
@@ -65,7 +80,8 @@ pub struct TeamSummary {
     /// Unix seconds the caller joined.
     pub joined_at: i64,
     /// Unix seconds of the latest change: team created, someone joined, a
-    /// card submitted, signed or activated.
+    /// card submitted, signed or activated, a prize proposed or agreed, or a
+    /// member paid.
     pub updated_at: i64,
 }
 
@@ -114,6 +130,7 @@ async fn summarize(
     conn: &mut SqliteConnection,
     team: &TeamRow,
     cards: &TeamCards,
+    payout: Option<&PayoutState>,
     viewer: &str,
     joined_at: i64,
 ) -> Result<TeamSummary, ApiError> {
@@ -129,18 +146,34 @@ async fn summarize(
         updated_at = updated_at.max(card.row.activated_at.unwrap_or_default());
         updated_at = updated_at.max(card.last_signed_at.unwrap_or_default());
     }
+    // A prize is only ever for the active card.
+    let payout = payout.filter(|payout| {
+        cards
+            .active
+            .as_ref()
+            .is_some_and(|active| active.row.hash == payout.card_hash())
+    });
+    if let Some(payout) = payout {
+        updated_at = updated_at.max(payout.latest_change());
+    }
     let locked = cards.active.is_some();
+    let paid_out = payout.is_some_and(|payout| payout.paid_count() > 0);
     Ok(TeamSummary {
         team_id: team.id.to_string(),
         slug: team.slug.clone(),
         name: team.name.clone(),
         event_label: team.event_label.clone(),
-        list_status: if locked {
+        list_status: if paid_out {
+            list_status::PAID_OUT
+        } else if locked {
             list_status::LOCKED
         } else {
             list_status::DRAFT
         },
-        phase: locked.then_some(WAITING_FOR_PRIZE),
+        phase: locked.then(|| payout.map_or(phase::WAITING_FOR_PRIZE, PayoutState::phase)),
+        you_received_sats: payout
+            .and_then(|payout| payout.received_sats(viewer))
+            .map(|sats| sats.to_string()),
         card_hash: shown.map(|card| card.row.hash.clone()),
         signed_count: shown.map(|card| card.signing.signed.len()),
         member_count: shown.map(|card| card.card.members.len()),
@@ -179,8 +212,8 @@ async fn needs_signature(
     }))
 }
 
-/// `GET /me`: the caller's profile and a summary of each team they joined,
-/// for the home and cards screens.
+/// `GET /me`: the caller's profile, a summary of each team they joined, and
+/// what they have been paid, for the home and cards screens.
 ///
 /// # Errors
 ///
@@ -202,12 +235,31 @@ pub async fn get(
 
     let mut teams = Vec::with_capacity(joined.len());
     let mut asks: Vec<NeedsSignature> = Vec::new();
+    let (mut received_sats, mut paid_team_count) = (0_u64, 0_usize);
     for (team_id, joined_at) in joined {
         let team = load_team(&mut conn, team_id)
             .await?
             .ok_or_else(|| ApiError::internal(&"participant of a missing team"))?;
         let cards = team_cards(&mut conn, team.id, team.active_card_hash.as_deref()).await?;
-        teams.push(summarize(&mut conn, &team, &cards, &auth.pubkey, joined_at).await?);
+        let payout = load_payout(&mut conn, team.id).await?;
+        if let Some(sats) = payout
+            .as_ref()
+            .and_then(|payout| payout.received_sats(&auth.pubkey))
+        {
+            received_sats = received_sats.saturating_add(sats);
+            paid_team_count += 1;
+        }
+        teams.push(
+            summarize(
+                &mut conn,
+                &team,
+                &cards,
+                payout.as_ref(),
+                &auth.pubkey,
+                joined_at,
+            )
+            .await?,
+        );
         if let Some(draft) = cards
             .draft
             .as_ref()
@@ -225,5 +277,9 @@ pub async fn get(
         profile,
         teams,
         needs_signature,
+        summary: Summary {
+            received_sats: received_sats.to_string(),
+            paid_team_count,
+        },
     }))
 }

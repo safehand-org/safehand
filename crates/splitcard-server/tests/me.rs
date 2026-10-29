@@ -25,7 +25,13 @@ async fn before_a_profile_there_is_nothing() {
     let app = app().await;
     assert_eq!(
         me(&app, DAYO).await,
-        json!({ "pubkey": pubkey(DAYO), "profile": null, "teams": [], "needs_signature": null })
+        json!({
+            "pubkey": pubkey(DAYO),
+            "profile": null,
+            "teams": [],
+            "needs_signature": null,
+            "summary": { "received_sats": "0", "paid_team_count": 0 },
+        })
     );
 }
 
@@ -52,6 +58,7 @@ async fn a_new_team_is_a_draft_without_a_card() {
             "event_label": common::EVENT_LABEL,
             "list_status": "draft",
             "phase": null,
+            "you_received_sats": null,
             "card_hash": null,
             "signed_count": null,
             "member_count": null,

@@ -66,6 +66,9 @@ pub struct DecodedInvoice {
     pub currency: String,
     /// Unix time in seconds at which the invoice expires (timestamp plus expiry).
     pub expires_at_unix: u64,
+    /// The description hash in lowercase hex, or `None` for an invoice with a
+    /// plain description.
+    pub description_hash: Option<String>,
 }
 
 /// A reason an invoice is not acceptable.
@@ -190,6 +193,13 @@ pub fn decode_invoice(bolt11: &str) -> Result<DecodedInvoice, InvoiceError> {
         amount_msat: invoice.amount_milli_satoshis(),
         currency: invoice.currency().to_string(),
         expires_at_unix: expiry(&invoice),
+        description_hash: match invoice.description() {
+            Bolt11InvoiceDescriptionRef::Hash(hash) => {
+                let hash: &[u8; 32] = hash.0.as_ref();
+                Some(hex::encode(hash))
+            }
+            Bolt11InvoiceDescriptionRef::Direct(_) => None,
+        },
     })
 }
 

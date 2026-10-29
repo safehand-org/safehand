@@ -37,6 +37,9 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+# Only to build and sign test invoices, as splitcard-ln's tests do.
+bitcoin = { version = "0.32.2", default-features = false, features = ["std", "secp-recovery"] }
+lightning-invoice.workspace = true
 # Only to check core errors get the same codes and details as from WASM.
 splitcard-wasm = { path = "../splitcard-wasm" }
 tower = { version = "0.5.3", features = ["util"] }

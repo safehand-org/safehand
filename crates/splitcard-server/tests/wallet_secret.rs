@@ -124,6 +124,26 @@ async fn nwc_connection_strings_are_rejected_and_never_stored_or_logged() {
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    let prize = json!({ "prize_sats": "1000", "wallet": nwc }).to_string();
+    let (status, _) = app
+        .authed(
+            ALICE,
+            Method::PUT,
+            &format!("/teams/{team_id}/prize"),
+            &prize,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let payment = json!({ "bolt11": "lnbc1", "preimage": "00", "metadata": nwc }).to_string();
+    let (status, _) = app
+        .authed(
+            ALICE,
+            Method::POST,
+            &format!("/teams/{team_id}/payout/items/0/payment"),
+            &payment,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let stored = database_text(&app).await;
     assert!(stored.contains(&team_id) || stored.contains("Lightning Llamas"));

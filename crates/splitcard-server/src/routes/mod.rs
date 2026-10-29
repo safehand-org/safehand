@@ -6,6 +6,8 @@ pub mod cards;
 pub mod invites;
 /// `/me`.
 pub mod me;
+/// `/teams/{id}/prize` and `/teams/{id}/payout...`.
+pub mod payouts;
 /// `/me/profile` and `/profiles/{pubkey}`.
 pub mod profiles;
 /// `/teams` and `/teams/...`.

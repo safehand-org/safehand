@@ -24,7 +24,9 @@ use splitcard_core::{
 use sqlx::{FromRow, SqliteConnection};
 
 use super::{
-    conflict, parse_json, parse_team_id, team_not_found,
+    conflict, parse_json, parse_team_id,
+    payouts::{discard_prize, refuse_if_prize_agreed},
+    team_not_found,
     teams::{load_participants, load_team, require_participant},
     timestamps::{TimestampView, load_view},
     unprocessable,
@@ -381,7 +383,8 @@ async fn card_view(conn: &mut SqliteConnection, row: CardRow) -> Result<CardView
 /// (403); a core validation code, `wrong_event`, `wrong_team`,
 /// `member_not_participant`, `member_name_mismatch` or
 /// `member_address_mismatch` (422); `unexpected_supersedes`,
-/// `missing_supersedes` or `wrong_supersedes_hash` (409).
+/// `missing_supersedes`, `wrong_supersedes_hash`, or `prize_agreed` for a
+/// replacement once the team agreed a prize (409).
 pub async fn submit(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -439,6 +442,9 @@ pub async fn submit(
             )
             .with_details(details));
         }
+    }
+    if card.supersedes.is_some() {
+        refuse_if_prize_agreed(&mut tx, team_id).await?;
     }
     match (&team.active_card_hash, &card.supersedes) {
         (None, Some(_)) => {
@@ -532,7 +538,8 @@ pub async fn active(
 /// `invalid_event_json` (400), `card_not_found` (404), a core signature code
 /// such as `invalid_signature` or `non_member` (422), `card_superseded` (409),
 /// `card_stale` (409) for a draft whose `supersedes` is no longer the team's
-/// active card, so two fully signed cards never compete for one place.
+/// active card, so two fully signed cards never compete for one place, and
+/// `prize_agreed` (409) for a replacement card once the team agreed a prize.
 pub async fn sign(
     State(state): State<AppState>,
     Path(hash): Path<String>,
@@ -585,6 +592,9 @@ pub async fn sign(
         team.active_card_hash.as_deref(),
     ) {
         return Err(card_stale());
+    }
+    if card.supersedes.is_some() {
+        refuse_if_prize_agreed(&mut tx, row.team_id).await?;
     }
     let now = state.clock.now_unix();
     let stored = sqlx::query(
@@ -653,6 +663,9 @@ async fn activate_if_ready(
     .execute(&mut *conn)
     .await?;
     if let Some(old_hash) = &card.supersedes {
+        // A prize proposed for the old card was never agreed (agreeing one
+        // stops the card from being replaced), so it goes with that card.
+        discard_prize(conn, row.team_id).await?;
         sqlx::query("UPDATE cards SET status = 'superseded' WHERE hash = ? AND status = 'active'")
             .bind(old_hash)
             .execute(&mut *conn)
