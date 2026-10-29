@@ -1,5 +1,8 @@
 //! Member profiles: the name and Lightning Address a member uses on every
-//! team and card.
+//! team and card, and an optional bio.
+//!
+//! A new member signs up with a name only. The Lightning Address is needed
+//! before they create or join a team ([`require_payable_profile`]).
 
 use axum::{
     Json,
@@ -8,7 +11,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqliteConnection};
 
-use super::{conflict, parse_json, require_lightning_address, require_text};
+use serde_json::json;
+
+use super::{conflict, parse_json, require_lightning_address, require_text, unprocessable};
 use crate::{
     AppState,
     auth::{Authenticated, OptionalAuth},
@@ -22,15 +27,24 @@ use crate::{
 #[serde(deny_unknown_fields)]
 struct PutProfile {
     name: String,
-    lightning_address: String,
+    /// Absent or null keeps the stored address.
+    #[serde(default)]
+    lightning_address: Option<String>,
+    /// Absent or null keeps the stored bio; an empty string clears it.
+    #[serde(default)]
+    bio: Option<String>,
 }
+
+/// Longest bio accepted, in characters.
+pub const MAX_BIO_CHARS: usize = 280;
 
 /// A stored profile.
 #[derive(Debug, Clone, FromRow)]
 pub(crate) struct ProfileRow {
     pub(crate) pubkey: String,
     pub(crate) name: String,
-    pub(crate) lightning_address: String,
+    pub(crate) lightning_address: Option<String>,
+    pub(crate) bio: Option<String>,
     pub(crate) updated_at: i64,
 }
 
@@ -42,9 +56,12 @@ pub struct ProfileView {
     /// Display name; cards must use it.
     pub name: String,
     /// Lightning Address; cards must use it. Shown only to the member and to
-    /// members of a team they share.
+    /// members of a team they share, and absent until the member sets it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lightning_address: Option<String>,
+    /// Optional bio, shown to everyone; absent when not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
     /// Unix seconds of the last change, shown with the address.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
@@ -55,7 +72,8 @@ impl ProfileView {
         Self {
             pubkey: row.pubkey,
             name: row.name,
-            lightning_address: show_private.then_some(row.lightning_address),
+            lightning_address: row.lightning_address.filter(|_| show_private),
+            bio: row.bio,
             updated_at: show_private.then_some(row.updated_at),
         }
     }
@@ -66,7 +84,7 @@ pub(crate) async fn load_profile(
     pubkey: &str,
 ) -> Result<Option<ProfileRow>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT pubkey, name, lightning_address, updated_at FROM profiles WHERE pubkey = ?",
+        "SELECT pubkey, name, lightning_address, bio, updated_at FROM profiles WHERE pubkey = ?",
     )
     .bind(pubkey)
     .fetch_optional(conn)
@@ -86,6 +104,23 @@ pub(crate) async fn require_profile(
     })
 }
 
+/// Fails with `profile_required` (409) unless `pubkey` has a profile, or
+/// `lightning_address_required` (409) unless that profile has a Lightning
+/// Address. Creating or joining a team needs both: cards pay members there.
+pub(crate) async fn require_payable_profile(
+    conn: &mut SqliteConnection,
+    pubkey: &str,
+) -> Result<ProfileRow, ApiError> {
+    let profile = require_profile(conn, pubkey).await?;
+    if profile.lightning_address.is_none() {
+        return Err(conflict(
+            "lightning_address_required",
+            "add a Lightning Address with PUT /me/profile first",
+        ));
+    }
+    Ok(profile)
+}
+
 async fn share_a_team(
     conn: &mut SqliteConnection,
     left: &str,
@@ -102,31 +137,51 @@ async fn share_a_team(
     Ok(shared.is_some())
 }
 
-/// `PUT /me/profile`: the signed-in member sets `{ name, lightning_address }`
-/// on their own profile, creating it if needed. Allowed at any time; cards
-/// already submitted keep the details they were submitted with.
+/// `PUT /me/profile`: the signed-in member sets `{ name, lightning_address?,
+/// bio? }` on their own profile, creating it if needed. An absent or null
+/// `lightning_address` or `bio` keeps the stored value, so the address is
+/// never cleared once set; an empty `bio` clears it. Allowed at any time;
+/// cards already submitted keep the details they were submitted with.
 ///
 /// # Errors
 ///
-/// `invalid_request_json` (400), `empty_field` or
-/// `invalid_lightning_address` (422).
+/// `invalid_request_json` (400), `empty_field`, `invalid_lightning_address`
+/// or `bio_too_long` (422).
 pub async fn put_mine(
     State(state): State<AppState>,
     auth: Authenticated,
 ) -> Result<Json<ProfileView>, ApiError> {
     let request: PutProfile = parse_json(&auth.body, "invalid_request_json")?;
     require_text("name", &request.name)?;
-    require_lightning_address(&request.lightning_address)?;
+    if let Some(address) = &request.lightning_address {
+        require_lightning_address(address)?;
+    }
+    if let Some(bio) = &request.bio
+        && bio.chars().count() > MAX_BIO_CHARS
+    {
+        return Err(unprocessable(
+            "bio_too_long",
+            format!("bio must be at most {MAX_BIO_CHARS} characters"),
+        )
+        .with_details(json!({ "field": "bio", "max_chars": MAX_BIO_CHARS })));
+    }
+    let bio_given = request.bio.is_some();
+    let bio = request.bio.filter(|bio| !bio.is_empty());
     let mut tx = begin_write(&state.db).await?;
     sqlx::query(
-        "INSERT INTO profiles (pubkey, name, lightning_address, updated_at) VALUES (?, ?, ?, ?) \
+        "INSERT INTO profiles (pubkey, name, lightning_address, bio, updated_at) \
+         VALUES (?, ?, ?, ?, ?) \
          ON CONFLICT (pubkey) DO UPDATE SET name = excluded.name, \
-         lightning_address = excluded.lightning_address, updated_at = excluded.updated_at",
+         lightning_address = coalesce(excluded.lightning_address, profiles.lightning_address), \
+         bio = CASE WHEN ? THEN excluded.bio ELSE profiles.bio END, \
+         updated_at = excluded.updated_at",
     )
     .bind(&auth.pubkey)
     .bind(&request.name)
     .bind(&request.lightning_address)
+    .bind(&bio)
     .bind(db_time(state.clock.now_unix()))
+    .bind(bio_given)
     .execute(&mut *tx)
     .await?;
     let profile = require_profile(&mut tx, &auth.pubkey).await?;

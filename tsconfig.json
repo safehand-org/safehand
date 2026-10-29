@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@splitcard/wasm": ["./crates/splitcard-wasm/pkg/splitcard_wasm.js"]
     }
   },
   "include": [

@@ -24,6 +24,18 @@ export interface UnsignedSignatureEvent {
   content: string;
 }
 
+/**
+ * A NIP-01 event to sign with `sign_event`. `pubkey` is optional; when
+ * present it must be the signing key's.
+ */
+export interface UnsignedEvent {
+  pubkey?: string;
+  created_at: number;
+  kind: number;
+  tags: string[][];
+  content: string;
+}
+
 /** A signed NIP-01 event, as a JSON string. */
 export type SignedEventJson = string;
 
@@ -43,7 +55,7 @@ export type CardStatus =
   | { status: "active"; signed: string[]; rejected: RejectedEvent[] };
 
 /** Every code a Split Card WASM function can throw. */
-export type ErrorCode = "invalid_card_json" | "invalid_event_json" | "invalid_amount" | "invalid_created_at" | "output_serialization" | "unsupported_version" | "empty_field" | "invalid_member_count" | "invalid_pubkey" | "duplicate_pubkey" | "empty_member_name" | "zero_weight" | "weight_too_large" | "invalid_lightning_address" | "invalid_supersedes" | "invalid_peer_review_max_shift_points" | "no_weights" | "split_zero_weight" | "prize_too_small" | "share_rounds_to_zero" | "hash_serialize" | "invalid_card_hash" | "invalid_template_pubkey" | "tag_construction" | "invalid_event_id" | "invalid_signature" | "wrong_kind" | "missing_d_tag" | "multiple_d_tags" | "wrong_d_tag_hash" | "missing_splitcard_tag" | "multiple_splitcard_tags" | "wrong_splitcard_tag_hash" | "non_member" | "invalid_old_card" | "invalid_new_card" | "wrong_supersedes_hash" | "missing_new_member_signatures" | "missing_old_member_signatures";
+export type ErrorCode = "invalid_card_json" | "invalid_event_json" | "invalid_amount" | "invalid_created_at" | "output_serialization" | "invalid_secret_key" | "invalid_aux_rand" | "invalid_unsigned_event" | "event_pubkey_mismatch" | "unsupported_version" | "empty_field" | "invalid_member_count" | "invalid_pubkey" | "duplicate_pubkey" | "empty_member_name" | "zero_weight" | "weight_too_large" | "invalid_lightning_address" | "invalid_supersedes" | "invalid_peer_review_max_shift_points" | "no_weights" | "split_zero_weight" | "prize_too_small" | "share_rounds_to_zero" | "hash_serialize" | "invalid_card_hash" | "invalid_template_pubkey" | "tag_construction" | "invalid_event_id" | "invalid_signature" | "wrong_kind" | "missing_d_tag" | "multiple_d_tags" | "wrong_d_tag_hash" | "missing_splitcard_tag" | "multiple_splitcard_tags" | "wrong_splitcard_tag_hash" | "non_member" | "invalid_old_card" | "invalid_new_card" | "wrong_supersedes_hash" | "missing_new_member_signatures" | "missing_old_member_signatures";
 
 /** Codes for card validation failures. */
 export type ValidationErrorCode =
@@ -80,6 +92,10 @@ export interface ErrorDetails {
   invalid_amount: { value: string };
   invalid_created_at: null;
   output_serialization: null;
+  invalid_secret_key: null;
+  invalid_aux_rand: { length: number };
+  invalid_unsigned_event: null;
+  event_pubkey_mismatch: { expected: string; actual: string };
   unsupported_version: { version: number };
   empty_field: { field: string };
   invalid_member_count: { count: number };

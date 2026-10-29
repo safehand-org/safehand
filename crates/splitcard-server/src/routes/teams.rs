@@ -12,8 +12,8 @@ use sqlx::{FromRow, SqliteConnection};
 use url::Url;
 
 use super::{
-    conflict, forbidden, is_unique_violation, parse_json, parse_team_id, profiles::require_profile,
-    require_text, team_not_found, unprocessable,
+    conflict, forbidden, is_unique_violation, parse_json, parse_team_id,
+    profiles::require_payable_profile, require_text, team_not_found, unprocessable,
 };
 use crate::{
     AppState,
@@ -211,7 +211,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 /// # Errors
 ///
 /// `invalid_request_json` (400), `invalid_slug` or `empty_field` (422),
-/// `profile_required` or `team_slug_taken` (409).
+/// `profile_required`, `lightning_address_required` or `team_slug_taken` (409).
 pub async fn create(
     State(state): State<AppState>,
     auth: Authenticated,
@@ -229,7 +229,7 @@ pub async fn create(
     let now = db_time(state.clock.now_unix());
 
     let mut tx = begin_write(&state.db).await?;
-    require_profile(&mut tx, &auth.pubkey).await?;
+    require_payable_profile(&mut tx, &auth.pubkey).await?;
     let inserted = sqlx::query_scalar(
         "INSERT INTO teams (slug, name, event_label, join_code, created_at) \
          VALUES (?, ?, ?, ?, ?) RETURNING id",
@@ -270,7 +270,7 @@ pub async fn create(
 /// # Errors
 ///
 /// `invalid_request_json` (400), `team_not_found` (404), `invalid_join_code`
-/// (403), `profile_required` (409).
+/// (403), `profile_required` or `lightning_address_required` (409).
 pub async fn join(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -286,7 +286,7 @@ pub async fn join(
     if !join_code_matches(&team, &request.join_code) {
         return Err(forbidden("invalid_join_code", "join code is wrong"));
     }
-    require_profile(&mut tx, &auth.pubkey).await?;
+    require_payable_profile(&mut tx, &auth.pubkey).await?;
     sqlx::query(
         "INSERT INTO participants (team_id, pubkey, joined_at) VALUES (?, ?, ?) \
          ON CONFLICT DO NOTHING",

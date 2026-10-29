@@ -2,6 +2,7 @@ import { PrimaryButton } from "@/components/create/WizardLayout";
 import { FieldLabel } from "@/components/join/JoinLayout";
 import { AuthModeToggle } from "./AuthModeToggle";
 import { SignupHeader } from "./SignupHeader";
+import { SignupSignIn } from "./SignupSignIn";
 import type { AuthMode } from "./types";
 
 export function SignupProfile({
@@ -13,6 +14,10 @@ export function SignupProfile({
   onBioChange,
   onSignIn,
   onSubmit,
+  submitting,
+  error,
+  replacesSavedLogin,
+  onRestore,
 }: {
   authMode: AuthMode;
   displayName: string;
@@ -22,6 +27,10 @@ export function SignupProfile({
   onBioChange: (value: string) => void;
   onSignIn: () => void;
   onSubmit: () => void;
+  submitting: boolean;
+  error: string | null;
+  replacesSavedLogin: boolean;
+  onRestore: (backupKey: string) => Promise<string | null>;
 }) {
   const canSubmit = displayName.trim().length > 0;
 
@@ -74,37 +83,20 @@ export function SignupProfile({
                 className="mt-2.5 h-12 w-full rounded-full border border-hairline bg-transparent px-5 text-[15px] text-sheet outline-none focus-visible:ring-2 focus-visible:ring-sheet/20"
               />
             </label>
+            {error ? (
+              <p className="mt-4 text-[12.5px] leading-[1.4] text-[#E23B3B]">{error}</p>
+            ) : null}
+
+            <div className="mt-auto flex items-center justify-center pt-10">
+              <PrimaryButton disabled={!canSubmit || submitting} onClick={onSubmit}>
+                {submitting ? "Signing Up…" : "Sign Up"}
+              </PrimaryButton>
+            </div>
           </>
         ) : (
-          <SignInStub onCreate={() => onAuthModeChange("create")} />
+          <SignupSignIn replacesSavedLogin={replacesSavedLogin} onSignIn={onRestore} />
         )}
-
-        <div className="mt-auto flex items-center justify-center pt-10">
-          <PrimaryButton
-            disabled={authMode !== "create" || !canSubmit}
-            onClick={onSubmit}
-          >
-            Sign Up
-          </PrimaryButton>
-        </div>
       </div>
     </div>
-  );
-}
-
-function SignInStub({ onCreate }: { onCreate: () => void }) {
-  return (
-    <p className="rounded-[1.35rem] border border-dashed border-hairline px-4 py-3 text-center text-[12.5px] leading-[1.4] text-muted">
-      {/* TODO: wire returning-user sign-in (session, Nostr, or wallet) */}
-      Sign in isn&apos;t connected yet.{" "}
-      <button
-        type="button"
-        onClick={onCreate}
-        className="text-[#34b6ee] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34b6ee]/40"
-      >
-        Create an account
-      </button>{" "}
-      to continue this mock flow.
-    </p>
   );
 }

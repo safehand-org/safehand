@@ -1,0 +1,214 @@
+//! A Nostr key held in the browser, and signing with it.
+//!
+//! The key never leaves the page: these functions take it as an argument and
+//! return public values or signed events. Randomness comes from the caller,
+//! so the browser's `crypto.getRandomValues` is the only source: a new key
+//! is 32 random bytes checked with [`parse_secret_key`], and each signature
+//! takes 32 bytes of auxiliary randomness (BIP-340).
+
+use nostr::{
+    event::{Event, EventId, Kind, Tag, Tags},
+    key::{Keys, SecretKey},
+    nips::nip19::ToBech32,
+    types::Timestamp,
+};
+use secp256k1::Secp256k1;
+use serde::Deserialize;
+use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
+
+use crate::{error::JsError, throw};
+
+fn keys(secret: &str) -> Result<Keys, JsError> {
+    SecretKey::parse(secret.trim())
+        .map(Keys::new)
+        .map_err(|_| JsError::secret_key())
+}
+
+/// Checks a secret key, given as 64 hex characters or an `nsec`, and
+/// returns it as lowercase hex.
+///
+/// # Errors
+///
+/// Throws `invalid_secret_key`.
+#[wasm_bindgen]
+pub fn parse_secret_key(secret: &str) -> Result<String, JsValue> {
+    keys(secret)
+        .map(|keys| keys.secret_key().to_secret_hex())
+        .map_err(throw)
+}
+
+/// Returns the `nsec` backup form of a secret key.
+///
+/// # Errors
+///
+/// Throws `invalid_secret_key`.
+#[wasm_bindgen]
+pub fn secret_key_nsec(secret: &str) -> Result<String, JsValue> {
+    let run = || -> Result<String, JsError> {
+        keys(secret)?
+            .secret_key()
+            .to_bech32()
+            .map_err(|_| JsError::secret_key())
+    };
+    run().map_err(throw)
+}
+
+/// Returns the public key of a secret key, as 64 lowercase hex characters.
+///
+/// # Errors
+///
+/// Throws `invalid_secret_key`.
+#[wasm_bindgen]
+pub fn public_key(secret: &str) -> Result<String, JsValue> {
+    keys(secret)
+        .map(|keys| keys.public_key().to_hex())
+        .map_err(throw)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnsignedEvent {
+    #[serde(default)]
+    pubkey: Option<String>,
+    created_at: u64,
+    kind: u16,
+    tags: Vec<Vec<String>>,
+    content: String,
+}
+
+/// Signs a NIP-01 event and returns it as JSON.
+///
+/// `unsigned_json` is `{ pubkey?, created_at, kind, tags, content }`, such as
+/// the output of `signature_template` or a NIP-98 event. `aux_rand` is 32
+/// bytes from `crypto.getRandomValues`.
+///
+/// # Errors
+///
+/// Throws `invalid_secret_key`, `invalid_aux_rand`, `invalid_unsigned_event`
+/// or `event_pubkey_mismatch`.
+#[wasm_bindgen(unchecked_return_type = "SignedEventJson")]
+pub fn sign_event(
+    secret: &str,
+    #[wasm_bindgen(unchecked_param_type = "string")] unsigned_json: &str,
+    aux_rand: &[u8],
+) -> Result<String, JsValue> {
+    signed_event_json(secret, unsigned_json, aux_rand).map_err(throw)
+}
+
+pub(crate) fn signed_event_json(
+    secret: &str,
+    unsigned_json: &str,
+    aux_rand: &[u8],
+) -> Result<String, JsError> {
+    let keys = keys(secret)?;
+    let aux: &[u8; 32] = aux_rand
+        .try_into()
+        .map_err(|_| JsError::aux_rand(aux_rand.len()))?;
+    let unsigned: UnsignedEvent =
+        serde_json::from_str(unsigned_json).map_err(|error| JsError::unsigned_event(&error))?;
+    let public_key = keys.public_key();
+    if let Some(pubkey) = &unsigned.pubkey
+        && *pubkey != public_key.to_hex()
+    {
+        return Err(JsError::event_pubkey_mismatch(&public_key.to_hex(), pubkey));
+    }
+    let tags = unsigned
+        .tags
+        .into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| JsError::unsigned_event(&error))?;
+    let tags = Tags::from_list(tags);
+    let created_at = Timestamp::from_secs(unsigned.created_at);
+    let kind = Kind::from_u16(unsigned.kind);
+    let id = EventId::compute(&public_key, &created_at, &kind, &tags, &unsigned.content);
+    let secp = Secp256k1::signing_only();
+    let sig = keys.sign_schnorr_with_aux_rand(&secp, id.as_bytes(), aux);
+    let event = Event::new(
+        id,
+        public_key,
+        created_at,
+        kind,
+        tags,
+        unsigned.content,
+        sig,
+    );
+    Ok(event.as_json())
+}
+
+#[cfg(test)]
+mod tests {
+    use nostr::event::Event;
+    use serde_json::json;
+
+    use super::{keys, signed_event_json};
+
+    const SECRET: &str = "0000000000000000000000000000000000000000000000000000000000000003";
+    const AUX: [u8; 32] = [7; 32];
+
+    #[test]
+    fn secret_keys_parse_from_hex_or_nsec_and_round_trip() {
+        let keys = keys(SECRET).expect("valid");
+        let nsec = nostr::nips::nip19::ToBech32::to_bech32(keys.secret_key()).expect("nsec");
+        assert!(nsec.starts_with("nsec1"));
+        assert_eq!(
+            super::keys(&nsec).expect("nsec parses").public_key(),
+            keys.public_key()
+        );
+        for bad in ["", "zz", &"0".repeat(64), &"f".repeat(64), "nsec1abc"] {
+            assert_eq!(
+                super::keys(bad).err().map(|e| e.code),
+                Some("invalid_secret_key")
+            );
+        }
+    }
+
+    #[test]
+    fn signed_events_verify_and_keep_their_fields() {
+        let unsigned = json!({
+            "created_at": 1_700_000_000,
+            "kind": 27_235,
+            "tags": [["u", "https://example.com/api/me"], ["method", "GET"]],
+            "content": "",
+        })
+        .to_string();
+        let signed = signed_event_json(SECRET, &unsigned, &AUX).expect("signs");
+        let event: Event = serde_json::from_str(&signed).expect("an event");
+        event.verify().expect("valid id and signature");
+        assert_eq!(event.pubkey, keys(SECRET).expect("keys").public_key());
+        assert_eq!(event.kind.as_u16(), 27_235);
+        assert_eq!(event.created_at.as_secs(), 1_700_000_000);
+        assert_eq!(event.tags.len(), 2);
+    }
+
+    #[test]
+    fn bad_inputs_are_rejected_with_their_codes() {
+        let unsigned = json!({ "created_at": 1, "kind": 1, "tags": [], "content": "" });
+        let code = |secret: &str, unsigned: &str, aux: &[u8]| {
+            signed_event_json(secret, unsigned, aux)
+                .err()
+                .map(|e| e.code)
+        };
+        let ok = unsigned.to_string();
+        assert_eq!(code("nope", &ok, &AUX), Some("invalid_secret_key"));
+        assert_eq!(code(SECRET, &ok, &[0; 31]), Some("invalid_aux_rand"));
+        assert_eq!(code(SECRET, "{}", &AUX), Some("invalid_unsigned_event"));
+        let empty_tag = json!({ "created_at": 1, "kind": 1, "tags": [[]], "content": "" });
+        assert_eq!(
+            code(SECRET, &empty_tag.to_string(), &AUX),
+            Some("invalid_unsigned_event")
+        );
+        let other = json!({
+            "pubkey": "f".repeat(64), "created_at": 1, "kind": 1, "tags": [], "content": ""
+        });
+        assert_eq!(
+            code(SECRET, &other.to_string(), &AUX),
+            Some("event_pubkey_mismatch")
+        );
+        let mine = json!({
+            "pubkey": keys(SECRET).expect("keys").public_key().to_hex(),
+            "created_at": 1, "kind": 1, "tags": [], "content": ""
+        });
+        assert!(signed_event_json(SECRET, &mine.to_string(), &AUX).is_ok());
+    }
+}

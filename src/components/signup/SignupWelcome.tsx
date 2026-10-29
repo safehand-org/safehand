@@ -1,16 +1,22 @@
-import { DashedNote } from "@/components/join/JoinLayout";
 import { AuthModeToggle } from "./AuthModeToggle";
 import { SignupHeader } from "./SignupHeader";
+import { SignupSignIn } from "./SignupSignIn";
 import type { AuthMode } from "./types";
 
 export function SignupWelcome({
   authMode,
   onAuthModeChange,
   onCreateLogin,
+  replacesSavedLogin,
+  onSignIn,
+  error,
 }: {
   authMode: AuthMode;
   onAuthModeChange: (mode: AuthMode) => void;
   onCreateLogin: () => void;
+  replacesSavedLogin: boolean;
+  onSignIn: (backupKey: string) => Promise<string | null>;
+  error: string | null;
 }) {
   return (
     <div className="flex min-h-full flex-col">
@@ -30,16 +36,22 @@ export function SignupWelcome({
         />
 
         {authMode === "create" ? (
-          <CreateAccountMethods onCreateLogin={onCreateLogin} />
+          <CreateAccountMethods onCreateLogin={onCreateLogin} error={error} />
         ) : (
-          <SignInStub />
+          <SignupSignIn replacesSavedLogin={replacesSavedLogin} onSignIn={onSignIn} />
         )}
       </div>
     </div>
   );
 }
 
-function CreateAccountMethods({ onCreateLogin }: { onCreateLogin: () => void }) {
+function CreateAccountMethods({
+  onCreateLogin,
+  error,
+}: {
+  onCreateLogin: () => void;
+  error: string | null;
+}) {
   return (
     <>
       <div className="mt-4 rounded-[1.35rem] border border-dashed border-hairline px-4 py-4">
@@ -59,6 +71,7 @@ function CreateAccountMethods({ onCreateLogin }: { onCreateLogin: () => void }) 
       >
         Create My Login
       </button>
+      {error ? <p className="mt-3 text-[12.5px] leading-[1.4] text-[#E23B3B]">{error}</p> : null}
 
       <div className="mt-6 flex w-full items-center gap-3">
         <span aria-hidden="true" className="h-px flex-1 bg-[#2a2a2a]" />
@@ -73,18 +86,6 @@ function CreateAccountMethods({ onCreateLogin }: { onCreateLogin: () => void }) 
       {/* TODO: wire Bitcoin wallet signup (lnurl / nwc / on-chain) to the auth backend */}
       <MethodButton onClick={() => {}}>Sign Up With A Bitcoin Wallet</MethodButton>
     </>
-  );
-}
-
-function SignInStub() {
-  return (
-    <div className="mt-4">
-      {/* TODO: wire returning-user sign-in (session, Nostr, or wallet) */}
-      <DashedNote>
-        Sign in isn&apos;t connected yet. Use Create Account to continue this
-        mock flow.
-      </DashedNote>
-    </div>
   );
 }
 

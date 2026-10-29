@@ -51,7 +51,14 @@ const UNREACHABLE_CODES: &[&str] = &[
 
 /// Codes covered by the wasm boundary tests instead, because their messages
 /// come from JS-side conversion that cannot run natively.
-const BOUNDARY_ONLY_CODES: &[&str] = &["invalid_created_at"];
+const BOUNDARY_ONLY_CODES: &[&str] = &[
+    "invalid_created_at",
+    // Keys and signing; covered by the unit tests in `src/keys.rs`.
+    "invalid_secret_key",
+    "invalid_aux_rand",
+    "invalid_unsigned_event",
+    "event_pubkey_mismatch",
+];
 
 // Inputs.
 

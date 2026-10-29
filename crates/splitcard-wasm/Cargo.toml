@@ -17,10 +17,8 @@ serde_json.workspace = true
 serde-wasm-bindgen.workspace = true
 splitcard-core = { path = "../splitcard-core" }
 wasm-bindgen.workspace = true
-
-# Native-only: the fixture generator signs events with fixed keys, using the
-# same nostr and secp256k1 versions splitcard-core depends on.
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Signing with a key held in the browser. Same versions splitcard-core
+# uses; randomness comes from the caller (`crypto.getRandomValues`).
 nostr = { version = "0.45.5", default-features = false, features = ["std"] }
 secp256k1 = { version = "0.30", default-features = false, features = ["alloc"] }
 

@@ -161,3 +161,61 @@ async fn unknown_profiles_are_not_found() {
         assert_eq!(body["code"], "profile_not_found");
     }
 }
+
+#[tokio::test]
+async fn new_members_sign_up_with_a_name_and_add_their_address_later() {
+    let app = app().await;
+    let body = json!({ "name": "Alice", "bio": "Builds things" }).to_string();
+    let (status, created) = app.authed(ALICE, Method::PUT, "/me/profile", &body).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(
+        created,
+        json!({
+            "pubkey": pubkey(ALICE),
+            "name": "Alice",
+            "bio": "Builds things",
+            "updated_at": common::NOW,
+        })
+    );
+
+    // Leaving out the address or the bio keeps what is stored.
+    let (status, updated) = app.put_profile(ALICE, "Alice", "alice@blink.sv").await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["lightning_address"], "alice@blink.sv");
+    assert_eq!(updated["bio"], "Builds things");
+    for body in [
+        json!({ "name": "Alice O." }),
+        json!({ "name": "Alice O.", "lightning_address": null, "bio": null }),
+    ] {
+        let (status, kept) = app
+            .authed(ALICE, Method::PUT, "/me/profile", &body.to_string())
+            .await;
+        assert_eq!(status, StatusCode::OK, "{kept}");
+        assert_eq!(kept["name"], "Alice O.");
+        assert_eq!(kept["lightning_address"], "alice@blink.sv");
+        assert_eq!(kept["bio"], "Builds things");
+    }
+
+    // An empty bio clears it.
+    let body = json!({ "name": "Alice O.", "bio": "" }).to_string();
+    let (status, cleared) = app.authed(ALICE, Method::PUT, "/me/profile", &body).await;
+    assert_eq!(status, StatusCode::OK, "{cleared}");
+    assert!(cleared.get("bio").is_none(), "{cleared}");
+    assert_eq!(cleared["lightning_address"], "alice@blink.sv");
+}
+
+#[tokio::test]
+async fn bios_are_public_and_limited_in_length() {
+    let app = app().await;
+    let bio = "é".repeat(splitcard_server::routes::profiles::MAX_BIO_CHARS);
+    let body = json!({ "name": "Alice", "bio": bio }).to_string();
+    let (status, _) = app.authed(ALICE, Method::PUT, "/me/profile", &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(profile_as(&app, None, ALICE).await["bio"], bio.as_str());
+
+    let body = json!({ "name": "Alice", "bio": format!("{bio}x") }).to_string();
+    let (status, body) = app.authed(ALICE, Method::PUT, "/me/profile", &body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["code"], "bio_too_long");
+    assert_eq!(body["details"]["field"], "bio");
+}

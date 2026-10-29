@@ -12,6 +12,8 @@ use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
 /// Structured errors thrown to JavaScript.
 pub mod error;
+/// A Nostr key held in the browser, and signing with it.
+pub mod keys;
 
 use error::JsError;
 

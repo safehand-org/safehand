@@ -1,4 +1,4 @@
-export type SignupStep = "welcome" | "profile" | "onboarding";
+export type SignupStep = "welcome" | "backup" | "profile" | "onboarding";
 export type AuthMode = "create" | "signin";
 export type OnboardingSlide = 1 | 2 | 3;
 

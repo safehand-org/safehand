@@ -156,6 +156,32 @@ async fn joining_needs_a_profile() {
 }
 
 #[tokio::test]
+async fn creating_or_joining_a_team_needs_a_lightning_address() {
+    let app = app().await;
+    let (team_id, code) = app.create_team(ALICE).await;
+    let name_only = json!({ "name": "Dayo" }).to_string();
+    let (status, _) = app
+        .authed(DAYO, Method::PUT, "/me/profile", &name_only)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_error(
+        &app.post_team(DAYO, "dayo-team").await,
+        StatusCode::CONFLICT,
+        "lightning_address_required",
+    );
+    assert_error(
+        &app.join_only(&team_id, &code, DAYO).await,
+        StatusCode::CONFLICT,
+        "lightning_address_required",
+    );
+    assert_eq!(team_count(&app).await, 1);
+
+    app.profile_ok(DAYO).await;
+    let (status, team) = app.join_only(&team_id, &code, DAYO).await;
+    assert_eq!(status, StatusCode::OK, "{team}");
+}
+
+#[tokio::test]
 async fn a_participant_s_name_and_address_come_from_their_profile() {
     let app = app().await;
     let (team_id, code) = app.create_team(ALICE).await;

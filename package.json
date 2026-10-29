@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "build:wasm": "scripts/build-wasm.sh",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

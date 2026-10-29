@@ -21,6 +21,11 @@ pub const ERROR_CODES: &[&str] = &[
     "invalid_amount",
     "invalid_created_at",
     "output_serialization",
+    // Keys and signing.
+    "invalid_secret_key",
+    "invalid_aux_rand",
+    "invalid_unsigned_event",
+    "event_pubkey_mismatch",
     // `ValidationError`.
     "unsupported_version",
     "empty_field",
@@ -107,6 +112,38 @@ impl JsError {
     /// `created_at` was not a whole number of seconds from 0 to 4294967295.
     pub(crate) fn created_at(error: &serde_wasm_bindgen::Error) -> Self {
         Self::new("invalid_created_at", error, Value::Null)
+    }
+
+    /// A secret key was not 64 hex characters or an `nsec`, or is out of range.
+    pub(crate) fn secret_key() -> Self {
+        Self::new(
+            "invalid_secret_key",
+            &"secret key must be 64 hex characters or an nsec, and a valid secp256k1 key",
+            Value::Null,
+        )
+    }
+
+    /// The auxiliary randomness for a signature was not exactly 32 bytes.
+    pub(crate) fn aux_rand(len: usize) -> Self {
+        Self::new(
+            "invalid_aux_rand",
+            &"aux_rand must be exactly 32 bytes from crypto.getRandomValues",
+            json!({ "length": len }),
+        )
+    }
+
+    /// An unsigned event did not parse, or one of its tags is invalid.
+    pub(crate) fn unsigned_event(error: &impl ToString) -> Self {
+        Self::new("invalid_unsigned_event", error, Value::Null)
+    }
+
+    /// An unsigned event names a pubkey other than the signing key's.
+    pub(crate) fn event_pubkey_mismatch(expected: &str, actual: &str) -> Self {
+        Self::new(
+            "event_pubkey_mismatch",
+            &"the event's pubkey is not the signing key's",
+            json!({ "expected": expected, "actual": actual }),
+        )
     }
 
     /// A successful result could not be converted to a JS value.
