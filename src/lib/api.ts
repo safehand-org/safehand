@@ -63,8 +63,11 @@ async function authorization(
 type Options = {
   /** JSON body, serialized once and sent as signed. */
   json?: unknown;
-  /** Sign the request. Fails with `auth_missing` when there is no key. */
-  signed?: boolean;
+  /**
+   * Sign the request: `true` fails with `auth_missing` when there is no
+   * key, `"if-available"` sends it unsigned instead.
+   */
+  signed?: boolean | "if-available";
 };
 
 export async function api<T>(method: string, path: string, options: Options = {}): Promise<T> {
@@ -75,8 +78,11 @@ export async function api<T>(method: string, path: string, options: Options = {}
   if (body) headers["Content-Type"] = "application/json";
   if (options.signed) {
     const identity = await currentIdentity();
-    if (!identity) throw new ApiError(401, "auth_missing", "Create a login first.");
-    headers.Authorization = await authorization(identity, method, url, body);
+    if (identity) {
+      headers.Authorization = await authorization(identity, method, url, body);
+    } else if (options.signed === true) {
+      throw new ApiError(401, "auth_missing", "Create a login first.");
+    }
   }
 
   let response: Response;
@@ -155,6 +161,73 @@ export type Me = {
   summary: { received_sats: string; paid_team_count: number };
 };
 
+/** Someone who joined a team. Addresses are shown only to teammates. */
+export type Participant = {
+  pubkey: string;
+  name: string;
+  lightning_address?: string;
+  joined_at: number;
+};
+
+export type TeamView = {
+  id: string;
+  slug: string;
+  name: string;
+  event_label: string;
+  /** Only for participants. */
+  join_code?: string | null;
+  active_card_hash: string | null;
+  created_at: number;
+  participants: Participant[];
+};
+
+export type CardView = {
+  hash: string;
+  team_id: string;
+  status: "draft" | "active" | "superseded" | "stale";
+  /** The card as a JSON string; parse it. */
+  card: string;
+  created_by: string;
+  created_at: number;
+  activated_at: number | null;
+  signing: { state: "draft" | "active"; signed: string[]; missing: string[] };
+  /** Stored signature events, as JSON strings. */
+  signatures: string[];
+};
+
+/** A card's JSON, parsed. Weights fit in JS numbers in this product. */
+export type CardJson = {
+  card_id: string;
+  event: string;
+  team: string;
+  members: {
+    pubkey: string;
+    name: string;
+    weight: number;
+    payout: { lightning: { address: string } };
+  }[];
+};
+
+export type PayoutItem = {
+  index: number;
+  pubkey: string;
+  name: string;
+  lightning_address: string;
+  amount_sats: string;
+  status: "pending" | "paid";
+  paid_at: number | null;
+};
+
+export type PayoutView = {
+  team_id: string;
+  card_hash: string;
+  prize_sats: string;
+  phase: "waiting-for-prize" | "prize-set-waiting" | "payouts-in-progress";
+  agreed_at: number | null;
+  paid_count: number;
+  items: PayoutItem[];
+};
+
 // Calls.
 
 export type ProfileUpdate = {
@@ -171,4 +244,9 @@ export function putProfile(update: ProfileUpdate): Promise<Profile> {
 
 export function getMe(): Promise<Me> {
   return api<Me>("GET", "/me", { signed: true });
+}
+
+/** The team's prize and payouts; participants only. */
+export function getPayout(teamId: string): Promise<PayoutView> {
+  return api<PayoutView>("GET", `/teams/${encodeURIComponent(teamId)}/payout`, { signed: true });
 }

@@ -19,7 +19,7 @@ const HOP_BY_HOP = new Set([
 ]);
 
 /** The server's base URL from SERVER_INTERNAL_URL, which may be a bare host:port. */
-function serverBase(): string | null {
+export function serverBase(): string | null {
   const configured = process.env.SERVER_INTERNAL_URL?.trim();
   if (!configured) return null;
   const withScheme = /^https?:\/\//.test(configured) ? configured : `http://${configured}`;
