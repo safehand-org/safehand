@@ -1,0 +1,20 @@
+{
+  "name": "splitcard-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/splitcard"
+  },
+  "files": [
+    "splitcard_wasm_bg.wasm",
+    "splitcard_wasm.js",
+    "splitcard_wasm.d.ts"
+  ],
+  "main": "splitcard_wasm.js",
+  "types": "splitcard_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
