@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CardsBadge } from "./CardsBadge";
 
 const tabs = [
   { href: "/", label: "Home", icon: HomeIcon, plus: false },
@@ -47,7 +48,10 @@ export function BottomNav({ activeHref = "/" }: { activeHref?: string }) {
                     : "flex min-w-[3.25rem] flex-col items-center gap-0.5 px-2 py-1.5 text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sheet/40"
                 }
               >
-                <Icon filled={isActive} />
+                <span className="relative">
+                  <Icon filled={isActive} />
+                  {tab.href === "/cards" ? <CardsBadge /> : null}
+                </span>
                 <span className="text-[11px] font-medium leading-none">
                   {tab.label}
                 </span>

@@ -6,7 +6,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ApiError, getMe, type Me } from "./api";
-import { hasStoredKey } from "./identity";
+import { hasSigner } from "./signer";
 
 export type MeState =
   | { status: "loading" }
@@ -19,7 +19,7 @@ export function useMe(): MeState {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!hasStoredKey()) {
+    if (!hasSigner()) {
       router.replace("/signup");
       return;
     }

@@ -18,6 +18,7 @@ export function SignupProfile({
   error,
   replacesSavedLogin,
   onRestore,
+  onConnectExtension,
 }: {
   authMode: AuthMode;
   displayName: string;
@@ -31,6 +32,7 @@ export function SignupProfile({
   error: string | null;
   replacesSavedLogin: boolean;
   onRestore: (backupKey: string) => Promise<string | null>;
+  onConnectExtension: () => Promise<string | null>;
 }) {
   const canSubmit = displayName.trim().length > 0;
 
@@ -94,7 +96,12 @@ export function SignupProfile({
             </div>
           </>
         ) : (
-          <SignupSignIn replacesSavedLogin={replacesSavedLogin} onSignIn={onRestore} />
+          <SignupSignIn
+            replacesSavedLogin={replacesSavedLogin}
+            onSignIn={onRestore}
+            onConnectExtension={onConnectExtension}
+            onCreateAccount={() => onAuthModeChange("create")}
+          />
         )}
       </div>
     </div>

@@ -8,8 +8,8 @@
 
 use nostr::{
     event::{Event, EventId, Kind, Tag, Tags},
-    key::{Keys, SecretKey},
-    nips::nip19::ToBech32,
+    key::{Keys, PublicKey, SecretKey},
+    nips::nip19::{FromBech32, ToBech32},
     types::Timestamp,
 };
 use secp256k1::Secp256k1;
@@ -63,6 +63,59 @@ pub fn public_key(secret: &str) -> Result<String, JsValue> {
     keys(secret)
         .map(|keys| keys.public_key().to_hex())
         .map_err(throw)
+}
+
+/// Reads a teammate's public key, given as an `npub` or 64 hex characters,
+/// and returns it as lowercase hex.
+///
+/// # Errors
+///
+/// Throws `secret_key_not_public` for an `nsec`, so the page can warn that
+/// it was a secret, or `invalid_public_key`.
+#[wasm_bindgen]
+pub fn parse_public_key(input: &str) -> Result<String, JsValue> {
+    public_key_hex(input).map_err(throw)
+}
+
+pub(crate) fn public_key_hex(input: &str) -> Result<String, JsError> {
+    let input = input.trim();
+    if SecretKey::from_bech32(input).is_ok()
+        || input
+            .get(..5)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("nsec1"))
+    {
+        return Err(JsError::secret_key_not_public());
+    }
+    let key = if input
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("npub1"))
+    {
+        PublicKey::from_bech32(&input.to_ascii_lowercase())
+    } else {
+        PublicKey::from_hex(input)
+    };
+    // Only a point on the curve can sign; `from_hex` checks the length alone.
+    key.ok()
+        .filter(|key| key.xonly().is_ok())
+        .map(|key| key.to_hex())
+        .ok_or_else(JsError::public_key)
+}
+
+/// Returns the `npub` form of a public key given as 64 hex characters.
+///
+/// # Errors
+///
+/// Throws `invalid_public_key`.
+#[wasm_bindgen]
+pub fn npub_encode(pubkey: &str) -> Result<String, JsValue> {
+    let run = || -> Result<String, JsError> {
+        PublicKey::from_hex(pubkey)
+            .ok()
+            .filter(|key| key.xonly().is_ok())
+            .and_then(|key| key.to_bech32().ok())
+            .ok_or_else(JsError::public_key)
+    };
+    run().map_err(throw)
 }
 
 #[derive(Deserialize)]
@@ -141,7 +194,7 @@ mod tests {
     use nostr::event::Event;
     use serde_json::json;
 
-    use super::{keys, signed_event_json};
+    use super::{keys, public_key_hex, signed_event_json};
 
     const SECRET: &str = "0000000000000000000000000000000000000000000000000000000000000003";
     const AUX: [u8; 32] = [7; 32];
@@ -159,6 +212,34 @@ mod tests {
             assert_eq!(
                 super::keys(bad).err().map(|e| e.code),
                 Some("invalid_secret_key")
+            );
+        }
+    }
+
+    #[test]
+    fn public_keys_parse_from_npub_or_hex_and_nsecs_are_refused() {
+        let keys = keys(SECRET).expect("valid");
+        let hex = keys.public_key().to_hex();
+        let npub = nostr::nips::nip19::ToBech32::to_bech32(&keys.public_key()).expect("npub");
+        assert_eq!(public_key_hex(&npub).ok(), Some(hex.clone()));
+        assert_eq!(
+            public_key_hex(&format!(" {} ", npub.to_uppercase())).ok(),
+            Some(hex.clone())
+        );
+        assert_eq!(public_key_hex(&hex.to_uppercase()).ok(), Some(hex));
+        let nsec = nostr::nips::nip19::ToBech32::to_bech32(keys.secret_key()).expect("nsec");
+        for secret in [nsec.as_str(), "nsec1abc", "NSEC1xyz"] {
+            assert_eq!(
+                public_key_hex(secret).err().map(|e| e.code),
+                Some("secret_key_not_public"),
+                "{secret}"
+            );
+        }
+        for bad in ["", "npub1abc", "zz", &"f".repeat(64)] {
+            assert_eq!(
+                public_key_hex(bad).err().map(|e| e.code),
+                Some("invalid_public_key"),
+                "{bad}"
             );
         }
     }

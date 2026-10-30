@@ -53,8 +53,12 @@ const UNREACHABLE_CODES: &[&str] = &[
 /// come from JS-side conversion that cannot run natively.
 const BOUNDARY_ONLY_CODES: &[&str] = &[
     "invalid_created_at",
+    // `new_card` takes a JS object; covered in `tests/parity.rs`.
+    "invalid_card_input",
     // Keys and signing; covered by the unit tests in `src/keys.rs`.
     "invalid_secret_key",
+    "invalid_public_key",
+    "secret_key_not_public",
     "invalid_aux_rand",
     "invalid_unsigned_event",
     "event_pubkey_mismatch",

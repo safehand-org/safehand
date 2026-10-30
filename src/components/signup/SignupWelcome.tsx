@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AuthModeToggle } from "./AuthModeToggle";
 import { SignupHeader } from "./SignupHeader";
 import { SignupSignIn } from "./SignupSignIn";
@@ -9,6 +10,7 @@ export function SignupWelcome({
   onCreateLogin,
   replacesSavedLogin,
   onSignIn,
+  onConnectExtension,
   error,
 }: {
   authMode: AuthMode;
@@ -16,6 +18,7 @@ export function SignupWelcome({
   onCreateLogin: () => void;
   replacesSavedLogin: boolean;
   onSignIn: (backupKey: string) => Promise<string | null>;
+  onConnectExtension: () => Promise<string | null>;
   error: string | null;
 }) {
   return (
@@ -36,9 +39,18 @@ export function SignupWelcome({
         />
 
         {authMode === "create" ? (
-          <CreateAccountMethods onCreateLogin={onCreateLogin} error={error} />
+          <CreateAccountMethods
+            onCreateLogin={onCreateLogin}
+            onConnectExtension={onConnectExtension}
+            error={error}
+          />
         ) : (
-          <SignupSignIn replacesSavedLogin={replacesSavedLogin} onSignIn={onSignIn} />
+          <SignupSignIn
+            replacesSavedLogin={replacesSavedLogin}
+            onSignIn={onSignIn}
+            onConnectExtension={onConnectExtension}
+            onCreateAccount={() => onAuthModeChange("create")}
+          />
         )}
       </div>
     </div>
@@ -47,11 +59,14 @@ export function SignupWelcome({
 
 function CreateAccountMethods({
   onCreateLogin,
+  onConnectExtension,
   error,
 }: {
   onCreateLogin: () => void;
+  onConnectExtension: () => Promise<string | null>;
   error: string | null;
 }) {
+  const [extensionError, setExtensionError] = useState<string | null>(null);
   return (
     <>
       <div className="mt-4 rounded-[1.35rem] border border-dashed border-hairline px-4 py-4">
@@ -81,8 +96,17 @@ function CreateAccountMethods({
         <span aria-hidden="true" className="h-px flex-1 bg-[#2a2a2a]" />
       </div>
 
-      {/* TODO: wire Nostr signup (nip-07 / nsec) to the auth backend */}
-      <MethodButton onClick={() => {}}>Sign Up With Nostr</MethodButton>
+      <MethodButton
+        onClick={() => {
+          setExtensionError(null);
+          void onConnectExtension().then(setExtensionError);
+        }}
+      >
+        Use a Nostr extension
+      </MethodButton>
+      {extensionError ? (
+        <p className="mt-3 text-[12.5px] leading-[1.4] text-[#E23B3B]">{extensionError}</p>
+      ) : null}
       {/* TODO: wire Bitcoin wallet signup (lnurl / nwc / on-chain) to the auth backend */}
       <MethodButton onClick={() => {}}>Sign Up With A Bitcoin Wallet</MethodButton>
     </>

@@ -15,7 +15,7 @@ export function CardsView() {
   const [filter, setFilter] = useState<CardFilterId>("all");
   const me = account.status === "ready" ? account.me : null;
   const cards = me ? cardsForFilter(filter, splitCardsFrom(me)) : null;
-  const signature = me ? signatureRequestFrom(me.needs_signature) : null;
+  const signature = me ? signatureRequestFrom(me) : null;
 
   return (
     <>

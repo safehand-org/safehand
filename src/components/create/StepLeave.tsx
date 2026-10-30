@@ -1,4 +1,4 @@
-import type { WizardState } from "./types";
+import { keepPercent, type WizardState } from "./types";
 
 export function StepLeave({
   state,
@@ -27,17 +27,21 @@ export function StepLeave({
           <span className="text-[10px] font-medium tracking-[0.16em] text-[#8a8a8a] uppercase">
             What they keep
           </span>
-          <input
-            type="text"
-            value={`${state.leaveKeepPercent}% of the prize`}
-            onChange={(event) => {
-              const match = event.target.value.match(/\d+(\.\d+)?/);
-              onChange({
-                leaveKeepPercent: match ? Number(match[0]) : 0,
-              });
-            }}
-            className="mt-2.5 h-12 w-full rounded-full border border-[#e7e7e7] bg-white px-5 text-[15px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-ink/15"
-          />
+          <span className="mt-2.5 flex h-12 w-full items-center rounded-full border border-[#e7e7e7] bg-white px-5 text-[15px] text-ink focus-within:ring-2 focus-within:ring-ink/15">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={state.leaveKeepPercent}
+              onChange={(event) => onChange({ leaveKeepPercent: event.target.value })}
+              className="w-10 bg-transparent outline-none"
+            />
+            <span>% of the prize</span>
+          </span>
+          {keepPercent(state) === null ? (
+            <span className="mt-2 block text-[13px] text-[#C62828]">
+              Enter a whole percent from 1 to 99.
+            </span>
+          ) : null}
         </label>
       ) : null}
     </div>

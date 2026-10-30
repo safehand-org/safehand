@@ -5,8 +5,8 @@
 // The URL is this page's origin plus `/api`, which is the server's
 // PUBLIC_BASE_URL in every deployment.
 
-import { currentIdentity, type Identity } from "./identity";
-import { loadWasm, randomBytes } from "./wasm";
+import { currentSigner, storedSignerKind, type Signer } from "./signer";
+import { randomBytes } from "./wasm";
 
 /** An error response from the server: `{ code, message, details }`. */
 export class ApiError extends Error {
@@ -33,12 +33,11 @@ function base64(text: string): string {
 }
 
 async function authorization(
-  identity: Identity,
+  signer: Signer,
   method: string,
   url: string,
   body: Uint8Array<ArrayBuffer> | null,
 ): Promise<string> {
-  const wasm = await loadWasm();
   // The event id must be unique (the server refuses replays), and two
   // requests to the same URL in the same second would otherwise share one.
   const tags = [
@@ -49,20 +48,24 @@ async function authorization(
   if (body && body.length > 0) {
     tags.push(["payload", hex(await crypto.subtle.digest("SHA-256", body))]);
   }
-  const unsigned = {
-    pubkey: identity.pubkey,
+  const event = await signer.signEvent({
+    pubkey: await signer.getPublicKey(),
     created_at: Math.floor(Date.now() / 1000),
     kind: NIP98_KIND,
     tags,
     content: "",
-  };
-  const event = wasm.sign_event(identity.secret, JSON.stringify(unsigned), randomBytes());
+  });
   return `Nostr ${base64(event)}`;
 }
 
 type Options = {
   /** JSON body, serialized once and sent as signed. */
   json?: unknown;
+  /**
+   * A body sent byte for byte, such as a card or a signed event, which
+   * travel as exact strings and are never re-serialized.
+   */
+  raw?: string;
   /**
    * Sign the request: `true` fails with `auth_missing` when there is no
    * key, `"if-available"` sends it unsigned instead.
@@ -72,16 +75,31 @@ type Options = {
 
 export async function api<T>(method: string, path: string, options: Options = {}): Promise<T> {
   const url = `${window.location.origin}/api${path}`;
-  const body =
-    options.json === undefined ? null : new TextEncoder().encode(JSON.stringify(options.json));
+  const text =
+    options.raw ?? (options.json === undefined ? undefined : JSON.stringify(options.json));
+  const body = text === undefined ? null : new TextEncoder().encode(text);
   const headers: Record<string, string> = {};
   if (body) headers["Content-Type"] = "application/json";
   if (options.signed) {
-    const identity = await currentIdentity();
-    if (identity) {
-      headers.Authorization = await authorization(identity, method, url, body);
+    const signer = await currentSigner();
+    if (signer) {
+      try {
+        headers.Authorization = await authorization(signer, method, url, body);
+      } catch (error) {
+        throw new ApiError(
+          401,
+          "signing_refused",
+          error instanceof Error ? error.message : "Your request wasn't signed.",
+        );
+      }
     } else if (options.signed === true) {
-      throw new ApiError(401, "auth_missing", "Create a login first.");
+      throw storedSignerKind() === "nip07"
+        ? new ApiError(
+            401,
+            "extension_missing",
+            "Your Nostr extension isn't available. Unlock it, or sign in again.",
+          )
+        : new ApiError(401, "auth_missing", "Create a login first.");
     }
   }
 
@@ -91,10 +109,10 @@ export async function api<T>(method: string, path: string, options: Options = {}
   } catch {
     throw new ApiError(0, "network_error", "Couldn't reach Safehand. Check your connection.");
   }
-  const text = await response.text();
+  const reply = await response.text();
   let data: unknown = null;
   try {
-    data = text ? JSON.parse(text) : null;
+    data = reply ? JSON.parse(reply) : null;
   } catch {
     // Not JSON; handled below.
   }
@@ -158,6 +176,7 @@ export type Me = {
   profile: Profile | null;
   teams: TeamSummary[];
   needs_signature: NeedsSignature | null;
+  pending_cards: PendingCard[];
   summary: { received_sats: string; paid_team_count: number };
 };
 
@@ -165,7 +184,7 @@ export type Me = {
 export type Participant = {
   pubkey: string;
   name: string;
-  lightning_address?: string;
+  lightning_address?: string | null;
   joined_at: number;
 };
 
@@ -177,6 +196,8 @@ export type TeamView = {
   /** Only for participants. */
   join_code?: string | null;
   active_card_hash: string | null;
+  /** The newest draft that would replace the active card (or be the first). */
+  draft_card_hash: string | null;
   created_at: number;
   participants: Participant[];
 };
@@ -184,7 +205,7 @@ export type TeamView = {
 export type CardView = {
   hash: string;
   team_id: string;
-  status: "draft" | "active" | "superseded" | "stale";
+  status: "draft" | "active" | "superseded" | "stale" | "declined";
   /** The card as a JSON string; parse it. */
   card: string;
   created_by: string;
@@ -193,19 +214,8 @@ export type CardView = {
   signing: { state: "draft" | "active"; signed: string[]; missing: string[] };
   /** Stored signature events, as JSON strings. */
   signatures: string[];
-};
-
-/** A card's JSON, parsed. Weights fit in JS numbers in this product. */
-export type CardJson = {
-  card_id: string;
-  event: string;
-  team: string;
-  members: {
-    pubkey: string;
-    name: string;
-    weight: number;
-    payout: { lightning: { address: string } };
-  }[];
+  members: CardMember[];
+  declined: CardDecline[];
 };
 
 export type PayoutItem = {
@@ -249,4 +259,79 @@ export function getMe(): Promise<Me> {
 /** The team's prize and payouts; participants only. */
 export function getPayout(teamId: string): Promise<PayoutView> {
   return api<PayoutView>("GET", `/teams/${encodeURIComponent(teamId)}/payout`, { signed: true });
+}
+
+// Version 2 cards: members by npub, signing in the app.
+
+/** A draft that lists the viewer and waits for their signature. */
+export type PendingCard = {
+  team_id: string;
+  slug: string;
+  name: string;
+  card_hash: string;
+  creator_name: string;
+  /** The viewer's share; 10,000 is the whole prize. */
+  share_basis_points: number;
+  created_at: number;
+};
+
+/** One member of a card, as the server describes it. */
+export type CardMember = {
+  pubkey: string;
+  npub: string;
+  /** The card's label, else their profile name, else null. */
+  name: string | null;
+  /** A whole number, as a string. */
+  weight: string;
+  share_basis_points: number;
+  signed: boolean;
+  declined: boolean;
+  /** Where their share is paid; null until a version 2 member signs. */
+  lightning_address: string | null;
+};
+
+export type CardDecline = { pubkey: string; name: string | null; declined_at: number };
+
+/** The parts of a team the create flow needs. */
+export type CreatedTeam = { id: string; slug: string };
+
+export function getProfile(pubkey: string): Promise<Profile> {
+  return api<Profile>("GET", `/profiles/${encodeURIComponent(pubkey)}`, { signed: "if-available" });
+}
+
+export function createTeam(team: {
+  slug: string;
+  name: string;
+  event_label: string;
+}): Promise<TeamView> {
+  return api<TeamView>("POST", "/teams", { json: team, signed: true });
+}
+
+export function getTeamBySlug(slug: string): Promise<TeamView> {
+  return api<TeamView>("GET", `/teams/by-slug/${encodeURIComponent(slug)}`, {
+    signed: "if-available",
+  });
+}
+
+/** Submits a card exactly as built: the string is the body. */
+export function submitCard(teamId: string, cardJson: string): Promise<CardView> {
+  return api<CardView>("POST", `/teams/${encodeURIComponent(teamId)}/cards`, {
+    raw: cardJson,
+    signed: true,
+  });
+}
+
+export function getCard(hash: string): Promise<CardView> {
+  return api<CardView>("GET", `/cards/${encodeURIComponent(hash)}`, { signed: "if-available" });
+}
+
+/** Posts a signed card event exactly as signed. */
+export function postSignature(hash: string, eventJson: string): Promise<CardView> {
+  return api<CardView>("POST", `/cards/${encodeURIComponent(hash)}/signatures`, {
+    raw: eventJson,
+  });
+}
+
+export function declineCard(hash: string): Promise<CardView> {
+  return api<CardView>("POST", `/cards/${encodeURIComponent(hash)}/decline`, { signed: true });
 }

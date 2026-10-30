@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { BellIcon, HamburgerIcon } from "@/components/home/icons";
 import { BackTriangleIcon } from "./icons";
 
 const STEP_PILLS: Record<number, string> = {
@@ -8,7 +7,7 @@ const STEP_PILLS: Record<number, string> = {
   2: "Add Teammates",
   3: "Shares",
   4: "If Someone Leaves",
-  5: "Review",
+  5: "Review And Sign",
 };
 
 export function WizardLayout({
@@ -23,7 +22,7 @@ export function WizardLayout({
   backHref,
   children,
 }: {
-  step: 1 | 2 | 3 | 4 | 5 | 6;
+  step: 1 | 2 | 3 | 4 | 5;
   title: string;
   subtitle: string;
   note?: string;
@@ -34,51 +33,45 @@ export function WizardLayout({
   backHref?: string;
   children: ReactNode;
 }) {
-  const isInvite = step === 6;
-
   return (
     <div className="flex min-h-full flex-col">
       <section className="overflow-hidden rounded-b-sheet bg-sheet text-ink">
-        {isInvite ? null : (
-          <div className="h-[3px] w-full">
-            <div
-              className="h-full bg-ink"
-              style={{ width: `${(step / 5) * 100}%` }}
-            />
-          </div>
-        )}
+        <div className="h-[3px] w-full">
+          <div
+            className="h-full bg-ink"
+            style={{ width: `${(step / 5) * 100}%` }}
+          />
+        </div>
 
-        <div className={isInvite ? "px-5 pt-8 pb-6" : "px-5 pt-4 pb-6"}>
-          {isInvite ? <InviteHeader onBack={onBack} /> : (
-            <header className="flex items-center justify-between">
-              {backHref ? (
-                <Link
-                  href={backHref}
-                  prefetch={false}
-                  className="flex items-center gap-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                >
-                  <BackTriangleIcon />
-                  <span className="text-[10px] font-semibold tracking-[0.14em] uppercase">
-                    Step {step} of 5
-                  </span>
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="flex items-center gap-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                >
-                  <BackTriangleIcon />
-                  <span className="text-[10px] font-semibold tracking-[0.14em] uppercase">
-                    Step {step} of 5
-                  </span>
-                </button>
-              )}
-              <span className="rounded-full border border-[#ebebeb] bg-white px-3 py-1.5 text-[10px] font-medium tracking-[0.12em] text-[#6f6f6f] uppercase">
-                {STEP_PILLS[step]}
-              </span>
-            </header>
-          )}
+        <div className="px-5 pt-4 pb-6">
+          <header className="flex items-center justify-between">
+            {backHref ? (
+              <Link
+                href={backHref}
+                prefetch={false}
+                className="flex items-center gap-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+              >
+                <BackTriangleIcon />
+                <span className="text-[10px] font-semibold tracking-[0.14em] uppercase">
+                  Step {step} of 5
+                </span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center gap-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+              >
+                <BackTriangleIcon />
+                <span className="text-[10px] font-semibold tracking-[0.14em] uppercase">
+                  Step {step} of 5
+                </span>
+              </button>
+            )}
+            <span className="rounded-full border border-[#ebebeb] bg-white px-3 py-1.5 text-[10px] font-medium tracking-[0.12em] text-[#6f6f6f] uppercase">
+              {STEP_PILLS[step]}
+            </span>
+          </header>
 
           <div className="mt-7 max-w-[15.75rem]">
             <h1 className="text-[2.15rem] leading-[0.95] font-semibold tracking-[-0.03em]">
@@ -106,40 +99,6 @@ export function WizardLayout({
         </div>
       </div>
     </div>
-  );
-}
-
-function InviteHeader({ onBack }: { onBack: () => void }) {
-  return (
-    <header className="flex items-center justify-between">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-1 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-      >
-        <BackTriangleIcon />
-        <span className="text-[15px] font-semibold tracking-[0.02em] uppercase">
-          Invite
-        </span>
-      </button>
-      <div className="flex items-center gap-3.5">
-        <Link
-          href="/notifications"
-          prefetch={false}
-          aria-label="Notifications"
-          className="flex items-center justify-center text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-        >
-          <BellIcon />
-        </Link>
-        <button
-          type="button"
-          aria-label="Open menu"
-          className="flex items-center justify-center text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-        >
-          <HamburgerIcon />
-        </button>
-      </div>
-    </header>
   );
 }
 

@@ -32,3 +32,9 @@ jobs:
       # A fresh build from source must work too.
       - run: scripts/build-wasm.sh
       - run: node crates/splitcard-wasm/tests/smoke.mjs
+      # App unit tests: Node's built-in runner with type stripping, against
+      # the committed browser package. Needs no npm install.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23
+      - run: npm run test:app

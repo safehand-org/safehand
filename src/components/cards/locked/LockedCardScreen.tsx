@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, getPayout, type CardView, type PayoutView, type TeamView } from "@/lib/api";
 import { lockedDetailFrom } from "@/lib/cardDetail";
-import { currentIdentity } from "@/lib/identity";
+import { currentPubkey } from "@/lib/signer";
 import { LockedCardStatusView } from "./LockedCardStatusView";
 import type { LockedSplitCardDetail } from "./types";
 
@@ -25,8 +25,7 @@ export function LockedCardScreen({
   useEffect(() => {
     let current = true;
     void (async () => {
-      const identity = await currentIdentity().catch(() => null);
-      const viewer = identity?.pubkey ?? null;
+      const viewer = await currentPubkey().catch(() => null);
       let payout: PayoutView | null = null;
       if (viewer && team.participants.some((participant) => participant.pubkey === viewer)) {
         try {

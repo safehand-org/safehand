@@ -7,9 +7,9 @@ import {
   backupKey as backupKeyOf,
   createIdentity,
   currentIdentity,
-  hasStoredKey,
   restoreIdentity,
 } from "@/lib/identity";
+import { connectExtension, hasSigner } from "@/lib/signer";
 import { SignupBackup } from "./SignupBackup";
 import { SignupOnboarding } from "./SignupOnboarding";
 import { SignupProfile } from "./SignupProfile";
@@ -114,6 +114,17 @@ export function SignupView() {
   async function signIn(input: string): Promise<string | null> {
     const identity = await restoreIdentity(input);
     if (!identity) return "That isn't a valid backup key. It starts with nsec1.";
+    return finishSignIn();
+  }
+
+  /** Signs in with a Nostr extension; resolves to an error message or null. */
+  async function signInWithExtension(): Promise<string | null> {
+    const failure = await connectExtension();
+    return failure ?? finishSignIn();
+  }
+
+  /** After choosing a signer: home if the profile exists, else set it up. */
+  async function finishSignIn(): Promise<string | null> {
     try {
       const me = await getMe();
       if (me.profile) {
@@ -164,8 +175,9 @@ export function SignupView() {
         onSubmit={submitProfile}
         submitting={submitting}
         error={error}
-        replacesSavedLogin={hasStoredKey()}
+        replacesSavedLogin={hasSigner()}
         onRestore={signIn}
+        onConnectExtension={signInWithExtension}
       />
     );
   }
@@ -175,8 +187,9 @@ export function SignupView() {
       authMode={state.authMode}
       onAuthModeChange={(authMode) => patch({ authMode })}
       onCreateLogin={createLogin}
-      replacesSavedLogin={hasStoredKey()}
+      replacesSavedLogin={hasSigner()}
       onSignIn={signIn}
+      onConnectExtension={signInWithExtension}
       error={error}
     />
   );

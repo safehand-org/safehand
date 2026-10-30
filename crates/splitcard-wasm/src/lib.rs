@@ -5,9 +5,14 @@
 //! strings so values above 2^53 - 1 never pass through JavaScript numbers.
 //! Failures are thrown as `{ code, message, details }` objects; see [`error`].
 
+use serde::Deserialize;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
-use splitcard_core::{card::Card, hash, signature, split, status, supersede, validate::validate};
+use splitcard_core::{
+    card::{Card, CardV2, LeaveRule, MemberV2, RulesV2},
+    hash, signature, split, status, supersede,
+    validate::validate,
+};
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
 /// Structured errors thrown to JavaScript.
@@ -36,6 +41,72 @@ pub fn version() -> String {
 pub fn card_hash(card_json: &str) -> Result<String, JsValue> {
     let run = || -> Result<String, JsError> { Ok(hash::card_hash_hex(&parse_card(card_json)?)?) };
     run().map_err(throw)
+}
+
+/// Builds a version 2 card from its fields, validates it and returns its
+/// canonical JSON, the exact string to hash, submit and sign.
+///
+/// # Errors
+///
+/// Throws `invalid_card_input` for fields of the wrong shape, or the first
+/// validation error.
+#[wasm_bindgen(unchecked_return_type = "CardJson")]
+pub fn new_card(
+    #[wasm_bindgen(unchecked_param_type = "NewCardInput")] input: JsValue,
+) -> Result<String, JsValue> {
+    let run = || -> Result<String, JsError> {
+        let input: NewCardInput =
+            serde_wasm_bindgen::from_value(input).map_err(|error| JsError::card_input(&error))?;
+        let leave = match input.leave_keep_percent {
+            None => LeaveRule::Nothing {},
+            Some(keep_percent) => LeaveRule::KeepPercent { keep_percent },
+        };
+        let card = Card::V2(CardV2 {
+            version: 2,
+            card_id: input.card_id,
+            event: input.event,
+            team: input.team,
+            members: input
+                .members
+                .into_iter()
+                .map(|member| MemberV2 {
+                    pubkey: member.pubkey,
+                    weight: member.weight,
+                    label: member.label,
+                })
+                .collect(),
+            rules: RulesV2 {
+                peer_review: None,
+                leave,
+            },
+            supersedes: input.supersedes,
+        });
+        validate(&card)?;
+        Ok(hash::canonical_json(&card)?)
+    };
+    run().map_err(throw)
+}
+
+// serde-wasm-bindgen reads only the named fields of a JS object, so unknown
+// keys are ignored rather than refused.
+#[derive(Deserialize)]
+struct NewCardInput {
+    card_id: String,
+    event: String,
+    team: String,
+    members: Vec<NewCardMember>,
+    #[serde(default)]
+    leave_keep_percent: Option<u32>,
+    #[serde(default)]
+    supersedes: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NewCardMember {
+    pubkey: String,
+    weight: u64,
+    #[serde(default)]
+    label: Option<String>,
 }
 
 /// Validates a card, returning nothing if it is valid.

@@ -66,7 +66,7 @@ export type CardStatus =
 | { status: "active"; signed: Signer[]; rejected: RejectedEvent[] };
 
 /** Every code a Split Card WASM function can throw. */
-export type ErrorCode = "invalid_card_json" | "invalid_event_json" | "invalid_amount" | "invalid_created_at" | "output_serialization" | "invalid_secret_key" | "invalid_aux_rand" | "invalid_unsigned_event" | "event_pubkey_mismatch" | "unsupported_version" | "empty_field" | "invalid_member_count" | "invalid_pubkey" | "duplicate_pubkey" | "empty_member_name" | "zero_weight" | "weight_too_large" | "invalid_lightning_address" | "invalid_member_label" | "invalid_supersedes" | "invalid_peer_review_max_shift_points" | "invalid_leave_keep_percent" | "no_weights" | "split_zero_weight" | "prize_too_small" | "share_rounds_to_zero" | "hash_serialize" | "invalid_card_hash" | "invalid_template_pubkey" | "invalid_template_lightning_address" | "tag_construction" | "invalid_event_id" | "invalid_signature" | "wrong_kind" | "missing_d_tag" | "multiple_d_tags" | "wrong_d_tag_hash" | "missing_splitcard_tag" | "multiple_splitcard_tags" | "wrong_splitcard_tag_hash" | "missing_lud16_tag" | "multiple_lud16_tags" | "invalid_lud16" | "unexpected_lud16_tag" | "non_member" | "invalid_old_card" | "invalid_new_card" | "wrong_supersedes_hash" | "missing_new_member_signatures" | "missing_old_member_signatures";
+export type ErrorCode = "invalid_card_json" | "invalid_event_json" | "invalid_amount" | "invalid_created_at" | "output_serialization" | "invalid_card_input" | "invalid_secret_key" | "invalid_public_key" | "secret_key_not_public" | "invalid_aux_rand" | "invalid_unsigned_event" | "event_pubkey_mismatch" | "unsupported_version" | "empty_field" | "invalid_member_count" | "invalid_pubkey" | "duplicate_pubkey" | "empty_member_name" | "zero_weight" | "weight_too_large" | "invalid_lightning_address" | "invalid_member_label" | "invalid_supersedes" | "invalid_peer_review_max_shift_points" | "invalid_leave_keep_percent" | "no_weights" | "split_zero_weight" | "prize_too_small" | "share_rounds_to_zero" | "hash_serialize" | "invalid_card_hash" | "invalid_template_pubkey" | "invalid_template_lightning_address" | "tag_construction" | "invalid_event_id" | "invalid_signature" | "wrong_kind" | "missing_d_tag" | "multiple_d_tags" | "wrong_d_tag_hash" | "missing_splitcard_tag" | "multiple_splitcard_tags" | "wrong_splitcard_tag_hash" | "missing_lud16_tag" | "multiple_lud16_tags" | "invalid_lud16" | "unexpected_lud16_tag" | "non_member" | "invalid_old_card" | "invalid_new_card" | "wrong_supersedes_hash" | "missing_new_member_signatures" | "missing_old_member_signatures";
 
 /** Codes for card validation failures. */
 export type ValidationErrorCode =
@@ -109,7 +109,10 @@ export interface ErrorDetails {
     invalid_amount: { value: string };
     invalid_created_at: null;
     output_serialization: null;
+    invalid_card_input: null;
     invalid_secret_key: null;
+    invalid_public_key: null;
+    secret_key_not_public: null;
     invalid_aux_rand: { length: number };
     invalid_unsigned_event: null;
     event_pubkey_mismatch: { expected: string; actual: string };
@@ -170,6 +173,24 @@ export type SplitCardError<C extends ErrorCode = ErrorCode> = {
     [K in C]: { code: K; message: string; details: ErrorDetails[K] };
 }[C];
 
+/** A member for `new_card`: a hex pubkey, a whole-number weight and an optional label. */
+export interface NewCardMember {
+    pubkey: string;
+    weight: number;
+    label?: string;
+}
+
+/** The fields of a new version 2 card, for `new_card`. */
+export interface NewCardInput {
+    card_id: string;
+    event: string;
+    team: string;
+    members: NewCardMember[];
+    /** Whole percent a leaver keeps, 1 to 99; leave out for "nothing". */
+    leave_keep_percent?: number;
+    supersedes?: string;
+}
+
 
 
 /**
@@ -227,6 +248,37 @@ export function compute_payouts(card_json: string, prize_sats: string): Payout[]
  * Throws `invalid_card_json`, a validation error or a split error.
  */
 export function display_basis_points(card_json: string): number[];
+
+/**
+ * Builds a version 2 card from its fields, validates it and returns its
+ * canonical JSON, the exact string to hash, submit and sign.
+ *
+ * # Errors
+ *
+ * Throws `invalid_card_input` for fields of the wrong shape, or the first
+ * validation error.
+ */
+export function new_card(input: NewCardInput): CardJson;
+
+/**
+ * Returns the `npub` form of a public key given as 64 hex characters.
+ *
+ * # Errors
+ *
+ * Throws `invalid_public_key`.
+ */
+export function npub_encode(pubkey: string): string;
+
+/**
+ * Reads a teammate's public key, given as an `npub` or 64 hex characters,
+ * and returns it as lowercase hex.
+ *
+ * # Errors
+ *
+ * Throws `secret_key_not_public` for an `nsec`, so the page can warn that
+ * it was a secret, or `invalid_public_key`.
+ */
+export function parse_public_key(input: string): string;
 
 /**
  * Checks a secret key, given as 64 hex characters or an `nsec`, and
@@ -319,6 +371,9 @@ export interface InitOutput {
     readonly check_supersede: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly compute_payouts: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly display_basis_points: (a: number, b: number) => [number, number, number];
+    readonly new_card: (a: any) => [number, number, number, number];
+    readonly npub_encode: (a: number, b: number) => [number, number, number, number];
+    readonly parse_public_key: (a: number, b: number) => [number, number, number, number];
     readonly parse_secret_key: (a: number, b: number) => [number, number, number, number];
     readonly public_key: (a: number, b: number) => [number, number, number, number];
     readonly secret_key_nsec: (a: number, b: number) => [number, number, number, number];
@@ -333,6 +388,8 @@ export interface InitOutput {
     readonly rustsecp256k1_v0_10_0_default_illegal_callback_fn: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

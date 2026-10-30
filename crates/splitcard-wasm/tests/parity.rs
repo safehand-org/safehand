@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use serde_wasm_bindgen::Serializer;
 use splitcard_wasm::{
     card_hash, card_status, check_supersede, compute_payouts, display_basis_points,
-    error::ERROR_CODES, signature_template, validate_card, verify_signature,
+    error::ERROR_CODES, new_card, signature_template, validate_card, verify_signature,
 };
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::wasm_bindgen_test;
@@ -172,6 +172,51 @@ fn created_at_must_be_a_whole_u32_number() {
         assert_eq!(error["code"], "invalid_created_at", "{bad:?}");
         assert_eq!(error["details"], Value::Null);
     }
+}
+
+#[wasm_bindgen_test]
+fn new_card_builds_a_canonical_valid_v2_card() {
+    let pk = |n: u8| format!("{n:064x}");
+    let pubkey = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    let other = "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+    let input = json!({
+        "card_id": "abc",
+        "event": "Hack",
+        "team": "Llamas",
+        "members": [
+            { "pubkey": pubkey, "weight": 1, "label": "Ada" },
+            { "pubkey": other, "weight": 1 },
+        ],
+        "leave_keep_percent": 15,
+    });
+    let card = new_card(to_js(&input)).unwrap_or_else(|error| panic!("{:?}", from_js(error)));
+    assert_eq!(
+        card,
+        format!(
+            r#"{{"card_id":"abc","event":"Hack","members":[{{"label":"Ada","pubkey":"{pubkey}","weight":1}},{{"pubkey":"{other}","weight":1}}],"rules":{{"leave":{{"keep_percent":15,"kind":"keep_percent"}},"peer_review":null}},"supersedes":null,"team":"Llamas","version":2}}"#
+        )
+    );
+    assert!(validate_card(&card).is_ok());
+
+    for bad in [
+        json!({ "card_id": "abc" }),
+        json!({ "card_id": "a", "event": "e", "team": "t", "members": [{ "pubkey": pk(1), "weight": 1.5 }] }),
+    ] {
+        let error = from_js(
+            new_card(to_js(&bad))
+                .err()
+                .unwrap_or_else(|| panic!("{bad}")),
+        );
+        assert_error_shape(&error);
+        assert_eq!(error["code"], "invalid_card_input", "{bad}");
+    }
+    let one = json!({ "card_id": "a", "event": "e", "team": "t", "members": [{ "pubkey": pubkey, "weight": 1 }] });
+    let error = from_js(
+        new_card(to_js(&one))
+            .err()
+            .unwrap_or_else(|| panic!("one member")),
+    );
+    assert_eq!(error["code"], "invalid_member_count");
 }
 
 fn valid_card() -> String {

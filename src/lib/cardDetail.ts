@@ -15,7 +15,7 @@ import {
 } from "@/components/cards/locked/types";
 import { PROFILE_COLORS } from "@/components/join/types";
 import { formatSats } from "./account";
-import type { CardJson, CardView, PayoutView, TeamView } from "./api";
+import type { CardMember, CardView, PayoutView, TeamView } from "./api";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -31,6 +31,16 @@ export function stamp(unixSeconds: number): { date: string; time: string } {
       : `GMT ${offsetMinutes > 0 ? "+" : "-"}${Number.isInteger(hours) ? hours : hours.toFixed(1)}`;
   const pad = (value: number) => String(value).padStart(2, "0");
   return { date, time: `${pad(at.getHours())}:${pad(at.getMinutes())} ${zone}` };
+}
+
+/** `npub1abcd…wxyz`, for showing a key in little space. */
+export function shortNpub(npub: string): string {
+  return npub.length > 20 ? `${npub.slice(0, 10)}…${npub.slice(-4)}` : npub;
+}
+
+/** A member's name, or their shortened npub when the card has none. */
+export function memberName(member: CardMember): string {
+  return member.name ?? shortNpub(member.npub);
 }
 
 /** "Bob", "Bob and Chidi", "Bob, Chidi and Dayo". */
@@ -57,12 +67,11 @@ function signatures(card: CardView): { pubkey: string; at: number }[] {
 function timeline(
   title: string,
   card: CardView,
-  parsed: CardJson,
   payout: PayoutView | null,
   phase: LockedCardPhase,
 ): LockedTimelineEvent[] {
   const nameOf = (pubkey: string) =>
-    parsed.members.find((member) => member.pubkey === pubkey)?.name ?? "A teammate";
+    card.members.find((member) => member.pubkey === pubkey)?.name ?? "A teammate";
   const events: LockedTimelineEvent[] = [
     { label: `${nameOf(card.created_by)} created split card '${title}'`, date: stamp(card.created_at).date },
   ];
@@ -125,18 +134,18 @@ export function lockedDetailFrom({
   viewer: string | null;
   host: string;
 }): LockedSplitCardDetail {
-  const parsed = JSON.parse(card.card) as CardJson;
   const phase: LockedCardPhase = payout?.phase ?? "waiting-for-prize";
-  const total = parsed.members.reduce((sum, member) => sum + member.weight, 0);
   const items = new Map(payout?.items.map((item) => [item.pubkey, item]) ?? []);
 
-  const members: LockedMember[] = parsed.members.map((member, index) => {
+  const members: LockedMember[] = card.members.map((member, index) => {
     const item = items.get(member.pubkey);
+    const name = memberName(member);
     return {
       id: member.pubkey,
-      name: member.name,
-      shortName: member.name,
-      sharePercent: Number(((member.weight / total) * 100).toFixed(1)),
+      name,
+      shortName: name,
+      // For display only: basis points from splitcard-core, as a percent.
+      sharePercent: member.share_basis_points / 100,
       color: PROFILE_COLORS[index % PROFILE_COLORS.length],
       signed: card.signing.signed.includes(member.pubkey),
       ...(phase === "payouts-in-progress" && item
@@ -147,7 +156,7 @@ export function lockedDetailFrom({
   });
   const viewerMember = members.find((member) => member.id === viewer);
   const destination =
-    parsed.members.find((member) => member.pubkey === viewer)?.payout.lightning.address ?? "";
+    card.members.find((member) => member.pubkey === viewer)?.lightning_address ?? "";
   const agreed = payout && phase !== "waiting-for-prize" ? payout : null;
 
   return {
@@ -162,7 +171,7 @@ export function lockedDetailFrom({
     lockedOn: stamp(card.activated_at ?? card.created_at),
     members,
     agreements: agreements(viewerMember, destination),
-    timeline: timeline(team.name, card, parsed, payout, phase),
+    timeline: timeline(team.name, card, payout, phase),
     ...(agreed
       ? { amount: Number(agreed.prize_sats), currency: "sats" as const }
       : {}),

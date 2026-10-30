@@ -51,7 +51,8 @@ function cardDetail(team: TeamSummary): string {
 
 export function splitCardsFrom(me: Me): SplitCard[] {
   return me.teams.map((team) => {
-    const linked = team.list_status !== "draft";
+    // Locked cards and drafts both have a page; a team with no card yet does not.
+    const linked = team.list_status !== "draft" || team.card_hash !== null;
     const received = team.you_received_sats;
     return {
       id: team.slug,
@@ -85,8 +86,20 @@ export type SignatureRequest = {
   href: string;
 };
 
-/** The "needs your signature" strip on the cards tab. */
-export function signatureRequestFrom(ask: NeedsSignature | null): SignatureRequest | null {
+/**
+ * The "needs your signature" strip on the cards tab: the newest card that
+ * lists the viewer by npub, else a version 1 invite.
+ */
+export function signatureRequestFrom(me: Me): SignatureRequest | null {
+  const card = me.pending_cards[0];
+  if (card) {
+    return {
+      title: card.name,
+      body: `${card.creator_name} added you. Your share is ${sharePercent(card.share_basis_points)}.`,
+      href: `/card/${encodeURIComponent(card.slug)}`,
+    };
+  }
+  const ask = me.needs_signature;
   if (!ask) return null;
   return {
     title: ask.name,

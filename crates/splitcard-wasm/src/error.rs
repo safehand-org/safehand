@@ -21,8 +21,11 @@ pub const ERROR_CODES: &[&str] = &[
     "invalid_amount",
     "invalid_created_at",
     "output_serialization",
+    "invalid_card_input",
     // Keys and signing.
     "invalid_secret_key",
+    "invalid_public_key",
+    "secret_key_not_public",
     "invalid_aux_rand",
     "invalid_unsigned_event",
     "event_pubkey_mismatch",
@@ -119,6 +122,29 @@ impl JsError {
     /// `created_at` was not a whole number of seconds from 0 to 4294967295.
     pub(crate) fn created_at(error: &serde_wasm_bindgen::Error) -> Self {
         Self::new("invalid_created_at", error, Value::Null)
+    }
+
+    /// The fields given to `new_card` were not the expected shape.
+    pub(crate) fn card_input(error: &serde_wasm_bindgen::Error) -> Self {
+        Self::new("invalid_card_input", error, Value::Null)
+    }
+
+    /// A public key was not an `npub` or 64 hex characters of a valid key.
+    pub(crate) fn public_key() -> Self {
+        Self::new(
+            "invalid_public_key",
+            &"public key must be an npub or 64 hex characters, and a valid secp256k1 key",
+            Value::Null,
+        )
+    }
+
+    /// A secret key (`nsec`) was given where a public key belongs.
+    pub(crate) fn secret_key_not_public() -> Self {
+        Self::new(
+            "secret_key_not_public",
+            &"this is a secret key (nsec), not a public key (npub); never share it",
+            Value::Null,
+        )
     }
 
     /// A secret key was not 64 hex characters or an `nsec`, or is out of range.

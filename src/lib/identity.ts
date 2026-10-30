@@ -1,9 +1,11 @@
-// The member's Nostr key, kept only in this browser.
+// The member's Nostr key, kept only in this browser, for those who do not
+// use a NIP-07 extension (see `@/lib/signer`).
 //
 // The secret key is never sent to the server: requests are signed with it
 // locally (NIP-98, see `@/lib/api`). Losing it loses the account, which is
 // why signup shows its `nsec` backup before anything else.
 
+import { chooseSigner } from "./signer";
 import { loadWasm, randomBytes } from "./wasm";
 
 const KEY_STORAGE = "safehand.key";
@@ -53,6 +55,7 @@ export async function createIdentity(): Promise<Identity> {
     try {
       const secret = wasm.parse_secret_key(hex);
       store(secret);
+      chooseSigner("local");
       return { secret, pubkey: wasm.public_key(secret) };
     } catch {
       continue;
@@ -73,6 +76,7 @@ export async function restoreIdentity(input: string): Promise<Identity | null> {
     return null;
   }
   store(secret);
+  chooseSigner("local");
   return { secret, pubkey: wasm.public_key(secret) };
 }
 
