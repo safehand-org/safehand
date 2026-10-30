@@ -72,12 +72,27 @@ pub enum ValidationError {
         /// Index of the member.
         index: usize,
     },
+    /// A version 2 member label was empty, too long or held a control character.
+    #[error(
+        "member {index} label must be 1 to {max} characters with no control characters",
+        max = crate::validate::MAX_LABEL_CHARS
+    )]
+    InvalidMemberLabel {
+        /// Index of the member.
+        index: usize,
+    },
     /// The superseded-card hash was malformed.
     #[error("supersedes must be a lowercase hexadecimal SHA-256 hash")]
     InvalidSupersedes,
     /// A peer-review maximum was outside the allowed range.
     #[error("peer review max_shift_points must be between 1 and 50")]
     InvalidPeerReviewMaxShiftPoints,
+    /// A `keep_percent` leave rule was outside 1 to 99.
+    #[error("leave keep_percent {keep_percent} must be between 1 and 99")]
+    InvalidLeaveKeepPercent {
+        /// The rejected percentage.
+        keep_percent: u32,
+    },
 }
 
 /// Failure while calculating a weighted split.
@@ -115,6 +130,22 @@ pub enum PayoutError {
     #[error("member {index} ({pubkey}) would receive 0 sats")]
     ShareRoundsToZero {
         /// Index of the first member whose share is zero.
+        index: usize,
+        /// That member's public key.
+        pubkey: String,
+    },
+}
+
+/// Failure while pairing members with their payout addresses.
+#[derive(Debug, Error)]
+pub enum PayoutAddressError {
+    /// The card failed validation.
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+    /// A version 2 member has no valid signature, so no signed address.
+    #[error("member {index} ({pubkey}) has not signed, so has no payout address")]
+    MissingSignature {
+        /// Index of the first member without a valid signature.
         index: usize,
         /// That member's public key.
         pubkey: String,

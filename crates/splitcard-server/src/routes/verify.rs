@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use splitcard_core::{
     card::Card,
     hash::{canonical_json, card_hash_hex},
-    signature::{SIGNATURE_KIND, verify_signature_event},
+    signature::{SIGNATURE_KIND, Signer, verify_signature_event},
     status::{CardStatus, card_status},
     supersede::{SupersedeError, check_supersede, verify_supersede_signature_event},
     validate::validate,
@@ -240,7 +240,7 @@ impl Stored {
     }
 
     fn supersedes(&self) -> Option<&str> {
-        self.card.as_ref().ok()?.supersedes.as_deref()
+        self.card.as_ref().ok()?.supersedes()
     }
 }
 
@@ -265,7 +265,7 @@ async fn load_stored(conn: &mut SqliteConnection, row: CardRow) -> Result<Stored
     .bind(&row.hash)
     .fetch_all(conn)
     .await?;
-    let card = serde_json::from_str::<Card>(&row.canonical_json).map_err(|e| e.to_string());
+    let card = Card::from_json(&row.canonical_json).map_err(|e| e.to_string());
     let signatures = signatures
         .into_iter()
         .map(|signature| {
@@ -396,7 +396,7 @@ fn unparsed_card(name: &'static str, error: &str) -> CheckReport {
 
 /// The card `card` supersedes, among `others`.
 fn previous_card<'a>(card: &Card, others: &'a [Stored]) -> Option<&'a Stored> {
-    let previous = card.supersedes.as_deref()?;
+    let previous = card.supersedes()?;
     others.iter().find(|other| other.row.hash == previous)
 }
 
@@ -407,7 +407,7 @@ fn fully_signed(stored: &Stored, others: &[&Stored]) -> bool {
         return false;
     };
     let events = stored.events();
-    match card.supersedes.as_deref() {
+    match card.supersedes() {
         None => matches!(
             card_status(card, &events).map(|report| report.status),
             Ok(CardStatus::Active { .. })
@@ -573,11 +573,12 @@ fn verify_events(evidence: &Evidence) -> Vec<Result<String, Value>> {
             let event = event.as_ref().map_err(
                 |error| json!({ "code": "invalid_event_json", "message": error, "details": null }),
             )?;
-            let signer = match (card.supersedes.is_some(), old) {
+            let signer = match (card.supersedes().is_some(), old) {
                 (true, Some(old)) => verify_supersede_signature_event(old, card, event),
                 _ => verify_signature_event(card, event),
             }
-            .map_err(error_json)?;
+            .map_err(error_json)?
+            .pubkey;
             if signer != row.pubkey {
                 return Err(json!({
                     "code": "stored_signer_mismatch",
@@ -617,15 +618,15 @@ fn signatures_valid(evidence: &Evidence, results: &[Result<String, Value>]) -> C
     )
 }
 
+fn signer_keys(signers: &[Signer]) -> Vec<String> {
+    signers.iter().map(|signer| signer.pubkey.clone()).collect()
+}
+
 fn member_list(card: &Card, pubkeys: &[String]) -> Vec<Value> {
     pubkeys
         .iter()
         .map(|pubkey| {
-            let name = card
-                .members
-                .iter()
-                .find(|member| &member.pubkey == pubkey)
-                .map(|member| member.name.clone());
+            let name = card.member_name(pubkey);
             json!({ "pubkey": pubkey, "name": name })
         })
         .collect()
@@ -642,13 +643,13 @@ fn all_members_signed(evidence: &Evidence) -> CheckReport {
             CardStatus::Active { signed } => check(
                 NAME,
                 check_result::PASS,
-                json!({ "signed": member_list(card, &signed) }),
+                json!({ "signed": member_list(card, &signer_keys(&signed)) }),
             ),
             CardStatus::Draft { signed, missing } => check(
                 NAME,
                 check_result::PENDING,
                 json!({
-                    "signed": member_list(card, &signed),
+                    "signed": member_list(card, &signer_keys(&signed)),
                     "missing": member_list(card, &missing),
                 }),
             ),
@@ -692,7 +693,7 @@ fn supersede_valid(evidence: &Evidence, chain: &Chain<'_>) -> CheckReport {
         Ok(card) => card,
         Err(error) => return unparsed_card(NAME, error),
     };
-    let Some(previous) = card.supersedes.as_deref() else {
+    let Some(previous) = card.supersedes() else {
         return check(NAME, check_result::NOT_APPLICABLE, Value::Null);
     };
     let Some(old) = previous_card(card, &evidence.others) else {
@@ -1029,9 +1030,8 @@ fn signature_reports(
             let member_name = card
                 .into_iter()
                 .chain(old)
-                .flat_map(|card| &card.members)
-                .find(|member| member.pubkey == row.pubkey)
-                .map(|member| member.name.clone());
+                .find_map(|card| card.member_name(&row.pubkey))
+                .map(str::to_owned);
             SignatureReport {
                 event: row.event_json.clone(),
                 signer: row.pubkey.clone(),

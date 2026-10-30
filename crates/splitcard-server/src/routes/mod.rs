@@ -20,7 +20,7 @@ pub mod verify;
 use axum::http::StatusCode;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use splitcard_core::validate::is_lightning_address;
+use splitcard_core::{card::Card, validate::is_lightning_address};
 
 use crate::error::ApiError;
 
@@ -32,6 +32,20 @@ pub(crate) fn parse_json<T: DeserializeOwned>(
 ) -> Result<T, ApiError> {
     reject_wallet_secrets(body)?;
     serde_json::from_slice(body).map_err(|error| ApiError::invalid_json(code, &error))
+}
+
+/// Parses a card body with [`Card::from_json`], reporting failures as
+/// `invalid_card_json`. Wallet secrets are refused first, as in [`parse_json`].
+pub(crate) fn parse_card(body: &[u8]) -> Result<Card, ApiError> {
+    reject_wallet_secrets(body)?;
+    let text = std::str::from_utf8(body).map_err(|error| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_card_json",
+            error.to_string(),
+        )
+    })?;
+    Card::from_json(text).map_err(|error| ApiError::invalid_json("invalid_card_json", &error))
 }
 
 /// URI schemes of NIP-47 (Nostr Wallet Connect) connection strings, which

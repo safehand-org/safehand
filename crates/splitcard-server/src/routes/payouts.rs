@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use splitcard_core::{
-    card::{Card, Payout},
-    split::compute_payouts,
+    card::Card,
+    split::{compute_payouts, payout_addresses},
 };
 use splitcard_ln::{
     invoice::{DecodedInvoice, InvoiceError, Network, decode_invoice},
@@ -398,14 +398,12 @@ pub async fn put_prize(
         .await?
         .ok_or_else(team_not_found)?;
     let (card_hash, card) = active_card(&mut tx, team.active_card_hash.as_deref()).await?;
-    if !card
-        .members
-        .iter()
-        .any(|member| member.pubkey == auth.pubkey)
-    {
+    if !card.is_member(&auth.pubkey) {
         return Err(not_a_card_member());
     }
     let amounts = compute_payouts(&card, prize_sats)?;
+    let addresses = payout_addresses(&card, &[])?;
+    let names = card.member_names();
 
     let existing = load_payout(&mut tx, team_id).await?;
     if let Some(existing) = &existing
@@ -434,16 +432,17 @@ pub async fn put_prize(
         .bind(now)
         .execute(&mut *tx)
         .await?;
-        for (index, (member, (_, amount))) in card.members.iter().zip(&amounts).enumerate() {
-            let Payout::Lightning { address } = &member.payout;
+        for (index, (((pubkey, amount), (_, address)), name)) in
+            amounts.iter().zip(&addresses).zip(&names).enumerate()
+        {
             sqlx::query(
                 "INSERT INTO payout_items (team_id, member_index, pubkey, name, \
                  lightning_address, amount_sats, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
             )
             .bind(team_id)
             .bind(i64::try_from(index).map_err(|error| ApiError::internal(&error))?)
-            .bind(&member.pubkey)
-            .bind(&member.name)
+            .bind(pubkey)
+            .bind(name.unwrap_or_default())
             .bind(address)
             .bind(db_sats(*amount)?)
             .execute(&mut *tx)

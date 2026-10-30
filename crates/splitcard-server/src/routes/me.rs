@@ -111,13 +111,12 @@ pub struct NeedsSignature {
 
 /// The caller's share of `card` in basis points, if they are a member.
 pub(crate) fn share_basis_points(card: &Card, pubkey: &str) -> Result<Option<u32>, ApiError> {
-    let weights: Vec<u64> = card.members.iter().map(|member| member.weight).collect();
-    let shares = display_basis_points(&weights)?;
+    let shares = display_basis_points(&card.weights())?;
     Ok(card
-        .members
-        .iter()
+        .pubkeys()
+        .into_iter()
         .zip(shares)
-        .find(|(member, _)| member.pubkey == pubkey)
+        .find(|(member, _)| *member == pubkey)
         .map(|(_, share)| share))
 }
 
@@ -176,7 +175,7 @@ async fn summarize(
             .map(|sats| sats.to_string()),
         card_hash: shown.map(|card| card.row.hash.clone()),
         signed_count: shown.map(|card| card.signing.signed.len()),
-        member_count: shown.map(|card| card.card.members.len()),
+        member_count: shown.map(|card| card.card.member_count()),
         participant_count: participants.len(),
         you_must_sign: cards
             .draft
@@ -206,7 +205,7 @@ async fn needs_signature(
         card_hash: draft.row.hash.clone(),
         inviter_name: inviter.name,
         share_basis_points: share,
-        member_count: draft.card.members.len(),
+        member_count: draft.card.member_count(),
         invited_at: draft.row.created_at,
         join_code: team.join_code.clone(),
     }))

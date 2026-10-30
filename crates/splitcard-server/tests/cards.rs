@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::http::{Method, StatusCode};
 use common::{
     ALICE, BOB, CHIDI, DAYO, EVE, EVENT_LABEL, SERVER_SECRET_HEX, TEAM_NAME, TestApp, app, card,
-    first_card, person, pubkey, signature,
+    first_card, person, pubkey, signature, v1,
 };
 use nostr::{event::Event, key::Keys};
 use serde_json::{Value, json};
@@ -154,7 +154,7 @@ async fn card_member_with_a_different_lightning_address_is_rejected() {
     let app = app().await;
     let team_id = app.alice_bob_chidi().await;
     let mut card = first_card();
-    card.members[1].payout = splitcard_core::card::Payout::Lightning {
+    v1(&mut card).members[1].payout = splitcard_core::card::Payout::Lightning {
         address: "bob@other.example".to_owned(),
     };
     let (status, body) = app.submit_card(ALICE, &team_id, &card).await;
@@ -168,7 +168,7 @@ async fn card_member_with_a_different_name_is_rejected() {
     let app = app().await;
     let team_id = app.alice_bob_chidi().await;
     let mut card = first_card();
-    card.members[2].name = "Chidinma".to_owned();
+    v1(&mut card).members[2].name = "Chidinma".to_owned();
     assert_error(
         app.submit_card(ALICE, &team_id, &card).await,
         StatusCode::UNPROCESSABLE_ENTITY,
@@ -181,14 +181,14 @@ async fn card_with_the_wrong_event_or_team_is_rejected() {
     let app = app().await;
     let team_id = app.alice_bob_chidi().await;
     let mut wrong_event = first_card();
-    wrong_event.event = "nostr-hack-2026".to_owned();
+    v1(&mut wrong_event).event = "nostr-hack-2026".to_owned();
     let (status, body) = app.submit_card(ALICE, &team_id, &wrong_event).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "wrong_event");
     assert_eq!(body["details"]["expected"], EVENT_LABEL);
 
     let mut wrong_team = first_card();
-    wrong_team.team = "Other Team".to_owned();
+    v1(&mut wrong_team).team = "Other Team".to_owned();
     let (status, body) = app.submit_card(ALICE, &team_id, &wrong_team).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "wrong_team");
@@ -238,7 +238,7 @@ async fn core_validation_errors_use_wasm_codes() {
     let app = app().await;
     let team_id = app.alice_bob_chidi().await;
     let mut card = first_card();
-    card.members[0].weight = splitcard_core::validate::MAX_WEIGHT + 1;
+    v1(&mut card).members[0].weight = splitcard_core::validate::MAX_WEIGHT + 1;
     let (status, body) = app.submit_card(ALICE, &team_id, &card).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "weight_too_large");
@@ -587,7 +587,7 @@ async fn a_card_must_match_member_profiles_when_submitted() {
 
     // A card with Bob's current profile is accepted.
     let mut card = first_card();
-    card.members[1].payout = splitcard_core::card::Payout::Lightning {
+    v1(&mut card).members[1].payout = splitcard_core::card::Payout::Lightning {
         address: "robert@getalby.com".to_owned(),
     };
     app.submit_ok(&team_id, &card).await;

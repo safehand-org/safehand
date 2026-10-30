@@ -1,8 +1,13 @@
 //! Exact weighted prize-split calculations.
 
+use std::collections::BTreeMap;
+
+use nostr::event::Event;
+
 use crate::{
-    card::Card,
-    error::{PayoutError, SplitError},
+    card::{Card, Payout},
+    error::{PayoutAddressError, PayoutError, SplitError},
+    signature::verify_signature_event,
     validate::validate,
 };
 
@@ -65,7 +70,8 @@ pub fn split(prize_sats: u64, weights: &[u64]) -> Result<Vec<u64>, SplitError> {
     Ok(amounts)
 }
 
-/// Validates a card and calculates `(pubkey, sats)` payouts in member order.
+/// Validates a card of either version and calculates `(pubkey, sats)`
+/// payouts in member order.
 ///
 /// # Errors
 ///
@@ -73,13 +79,12 @@ pub fn split(prize_sats: u64, weights: &[u64]) -> Result<Vec<u64>, SplitError> {
 /// or [`PayoutError::ShareRoundsToZero`] for the first member who would get 0 sats.
 pub fn compute_payouts(card: &Card, prize_sats: u64) -> Result<Vec<(String, u64)>, PayoutError> {
     validate(card)?;
-    let weights: Vec<u64> = card.members.iter().map(|member| member.weight).collect();
-    let amounts = split(prize_sats, &weights)?;
+    let amounts = split(prize_sats, &card.weights())?;
     let payouts: Vec<(String, u64)> = card
-        .members
-        .iter()
+        .pubkeys()
+        .into_iter()
         .zip(amounts)
-        .map(|(member, amount)| (member.pubkey.clone(), amount))
+        .map(|(pubkey, amount)| (pubkey.to_owned(), amount))
         .collect();
     if let Some((index, (pubkey, _))) = payouts
         .iter()
@@ -92,6 +97,60 @@ pub fn compute_payouts(card: &Card, prize_sats: u64) -> Result<Vec<(String, u64)
         });
     }
     Ok(payouts)
+}
+
+/// Pairs each member with their payout address, as `(pubkey, address)` in
+/// member order.
+///
+/// A version 1 card names the addresses itself. A version 2 member's address
+/// comes from their verified signature in `events`: the first valid event per
+/// member counts, as in [`card_status`](crate::status::card_status). Invalid
+/// events are ignored.
+///
+/// # Errors
+///
+/// Returns the card's validation error, or
+/// [`PayoutAddressError::MissingSignature`] for the first version 2 member
+/// without a valid signature.
+pub fn payout_addresses(
+    card: &Card,
+    events: &[Event],
+) -> Result<Vec<(String, String)>, PayoutAddressError> {
+    validate(card)?;
+    let card = match card {
+        Card::V1(card) => {
+            return Ok(card
+                .members
+                .iter()
+                .map(|member| {
+                    let Payout::Lightning { address } = &member.payout;
+                    (member.pubkey.clone(), address.clone())
+                })
+                .collect());
+        }
+        Card::V2(_) => card,
+    };
+    let mut signed = BTreeMap::new();
+    for event in events {
+        if let Ok(signer) = verify_signature_event(card, event)
+            && let Some(address) = signer.lightning_address
+        {
+            signed.entry(signer.pubkey).or_insert(address);
+        }
+    }
+    card.pubkeys()
+        .into_iter()
+        .enumerate()
+        .map(|(index, pubkey)| {
+            signed
+                .remove(pubkey)
+                .map(|address| (pubkey.to_owned(), address))
+                .ok_or_else(|| PayoutAddressError::MissingSignature {
+                    index,
+                    pubkey: pubkey.to_owned(),
+                })
+        })
+        .collect()
 }
 
 /// Returns exact, display-ready basis points for positive weights.

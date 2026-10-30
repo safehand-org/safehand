@@ -23,13 +23,13 @@ use nostr::{
 use secp256k1::Secp256k1;
 use serde_json::{Value, json};
 use splitcard_core::{
-    card::{Card, Member, Payout, PeerReview, Rules},
+    card::{Card, CardV1, CardV2, LeaveRule, Member, MemberV2, Payout, PeerReview, Rules, RulesV2},
     hash::card_hash_hex,
-    signature::{SIGNATURE_KIND, unsigned_signature_template, verify_signature_event},
+    signature::{SIGNATURE_KIND, Signer, unsigned_signature_template, verify_signature_event},
     split::{compute_payouts, display_basis_points},
     status::{CardStatus, card_status},
     supersede::check_supersede,
-    validate::{MAX_WEIGHT, validate},
+    validate::{MAX_LABEL_CHARS, MAX_WEIGHT, validate},
 };
 use splitcard_wasm::error::ERROR_CODES;
 
@@ -71,7 +71,7 @@ fn phase_1_card() -> Card {
             address: address.to_owned(),
         },
     };
-    Card {
+    Card::V1(CardV1 {
         version: 1,
         card_id: "btcpp-lagos-2026/team-42".to_owned(),
         event: "BTC++ Lagos 2026".to_owned(),
@@ -87,12 +87,12 @@ fn phase_1_card() -> Card {
             }),
         },
         supersedes: Some("a".repeat(64)),
-    }
+    })
 }
 
 fn card_with_weights(weights: [u64; 3]) -> Card {
     let mut card = phase_1_card();
-    for (member, weight) in card.members.iter_mut().zip(weights) {
+    for (member, weight) in v1(&mut card).members.iter_mut().zip(weights) {
         member.weight = weight;
     }
     card
@@ -118,7 +118,7 @@ fn member_pubkey(number: u8) -> String {
 }
 
 fn signed_card(numbers: &[u8]) -> Card {
-    Card {
+    Card::V1(CardV1 {
         version: 1,
         card_id: "phase-3/team-1".to_owned(),
         event: "Phase 3".to_owned(),
@@ -137,7 +137,7 @@ fn signed_card(numbers: &[u8]) -> Card {
             .collect(),
         rules: Rules { peer_review: None },
         supersedes: None,
-    }
+    })
 }
 
 fn tag(parts: &[&str]) -> Tag {
@@ -175,6 +175,14 @@ fn signature(card: &Card, key_number: u8) -> Event {
         SIGNATURE_KIND,
         vec![tag(&["d", &hash]), tag(&["splitcard", &hash])],
     )
+}
+
+/// The version 1 card inside `card`, for cases that change one field.
+fn v1(card: &mut Card) -> &mut CardV1 {
+    match card {
+        Card::V1(card) => card,
+        Card::V2(_) => panic!("expected a version 1 card"),
+    }
 }
 
 fn hash(card: &Card) -> String {
@@ -242,7 +250,7 @@ fn core_err<T, E: Display>(result: Result<T, E>) -> E {
 }
 
 fn card_json_error(json: &str) -> serde_json::Error {
-    core_err(serde_json::from_str::<Card>(json))
+    core_err(Card::from_json(json))
 }
 
 fn json_position(error: &serde_json::Error) -> Value {
@@ -259,8 +267,17 @@ fn payouts(card: &Card, prize_sats: u64) -> Value {
 }
 
 fn basis_points(card: &Card) -> Value {
-    let weights: Vec<u64> = card.members.iter().map(|member| member.weight).collect();
-    json!(display_basis_points(&weights).unwrap_or_else(|error| panic!("must split: {error}")))
+    json!(
+        display_basis_points(&card.weights()).unwrap_or_else(|error| panic!("must split: {error}"))
+    )
+}
+
+fn signer_json(signer: &Signer) -> Value {
+    json!({ "pubkey": signer.pubkey, "lightning_address": signer.lightning_address })
+}
+
+fn signers_json(signers: &[Signer]) -> Value {
+    signers.iter().map(signer_json).collect()
 }
 
 fn status(card: &Card, events: &[Event], rejected_codes: &[&str]) -> Value {
@@ -276,10 +293,10 @@ fn status(card: &Card, events: &[Event], rejected_codes: &[&str]) -> Value {
         .collect();
     match report.status {
         CardStatus::Draft { signed, missing } => {
-            json!({ "status": "draft", "signed": signed, "missing": missing, "rejected": rejected })
+            json!({ "status": "draft", "signed": signers_json(&signed), "missing": missing, "rejected": rejected })
         }
         CardStatus::Active { signed } => {
-            json!({ "status": "active", "signed": signed, "rejected": rejected })
+            json!({ "status": "active", "signed": signers_json(&signed), "rejected": rejected })
         }
     }
 }
@@ -321,37 +338,38 @@ fn validate_cases(cases: &mut Cases) {
 
     let mut invalid: Vec<(&str, Card, Value)> = Vec::new();
     let mut card = phase_1_card();
-    card.version = 2;
-    invalid.push(("unsupported_version", card, json!({ "version": 2 })));
+    // Version 2 JSON parses as a version 2 card, so use 3 here.
+    v1(&mut card).version = 3;
+    invalid.push(("unsupported_version", card, json!({ "version": 3 })));
     let mut card = phase_1_card();
-    card.team.clear();
+    v1(&mut card).team.clear();
     invalid.push(("empty_field", card, json!({ "field": "team" })));
     let mut card = phase_1_card();
-    card.members.truncate(1);
+    v1(&mut card).members.truncate(1);
     invalid.push(("invalid_member_count", card, json!({ "count": 1 })));
     let mut card = phase_1_card();
-    card.members[1].pubkey = "A".repeat(64);
+    v1(&mut card).members[1].pubkey = "A".repeat(64);
     invalid.push(("invalid_pubkey", card, json!({ "index": 1 })));
     let mut card = phase_1_card();
-    let first = card.members[0].pubkey.clone();
-    card.members[2].pubkey = first;
+    let first = v1(&mut card).members[0].pubkey.clone();
+    v1(&mut card).members[2].pubkey = first;
     invalid.push(("duplicate_pubkey", card, json!({ "index": 2 })));
     let mut card = phase_1_card();
-    card.members[0].name.clear();
+    v1(&mut card).members[0].name.clear();
     invalid.push(("empty_member_name", card, json!({ "index": 0 })));
     let mut card = phase_1_card();
-    card.members[1].weight = 0;
+    v1(&mut card).members[1].weight = 0;
     invalid.push(("zero_weight", card, json!({ "index": 1 })));
     let mut card = phase_1_card();
-    card.members[2].payout = Payout::Lightning {
+    v1(&mut card).members[2].payout = Payout::Lightning {
         address: "not-an-address".to_owned(),
     };
     invalid.push(("invalid_lightning_address", card, json!({ "index": 2 })));
     let mut card = phase_1_card();
-    card.supersedes = Some("xyz".to_owned());
+    v1(&mut card).supersedes = Some("xyz".to_owned());
     invalid.push(("invalid_supersedes", card, Value::Null));
     let mut card = phase_1_card();
-    card.rules.peer_review = Some(PeerReview {
+    v1(&mut card).rules.peer_review = Some(PeerReview {
         max_shift_points: 51,
     });
     invalid.push(("invalid_peer_review_max_shift_points", card, Value::Null));
@@ -370,7 +388,7 @@ fn validate_cases(cases: &mut Cases) {
 
     // Accepted by core before LUD-16 validation, but rejected at payout.
     let mut card = phase_1_card();
-    card.members[0].payout = Payout::Lightning {
+    v1(&mut card).members[0].payout = Payout::Lightning {
         address: "Alice!@Blink.sv".to_owned(),
     };
     let error = core_err(validate(&card));
@@ -401,9 +419,9 @@ fn payout_cases(cases: &mut Cases) {
     assert_eq!(
         expected,
         json!([
-            { "pubkey": card.members[0].pubkey, "amount_sats": "36001" },
-            { "pubkey": card.members[1].pubkey, "amount_sats": "35000" },
-            { "pubkey": card.members[2].pubkey, "amount_sats": "29000" },
+            { "pubkey": card.pubkeys()[0], "amount_sats": "36001" },
+            { "pubkey": card.pubkeys()[1], "amount_sats": "35000" },
+            { "pubkey": card.pubkeys()[2], "amount_sats": "29000" },
         ])
     );
     cases.ok(
@@ -435,7 +453,7 @@ fn payout_cases(cases: &mut Cases) {
         json!([card_json(&max), prize.to_string()]),
         "share_rounds_to_zero",
         error,
-        json!({ "index": 2, "pubkey": max.members[2].pubkey }),
+        json!({ "index": 2, "pubkey": max.pubkeys()[2] }),
     );
 
     // 21M BTC is below 2^53; a u64::MAX prize proves amounts above 2^53 survive.
@@ -468,7 +486,7 @@ fn payout_cases(cases: &mut Cases) {
     );
 
     let mut zero = phase_1_card();
-    zero.members[0].weight = 0;
+    v1(&mut zero).members[0].weight = 0;
     let error = core_err(compute_payouts(&zero, 100));
     cases.error(
         "compute_payouts: validates the card first",
@@ -530,7 +548,7 @@ fn basis_point_cases(cases: &mut Cases) {
         json!({ "index": 0, "weight": u64::MAX.to_string() }),
     );
     let mut empty_name = phase_1_card();
-    empty_name.members[1].name.clear();
+    v1(&mut empty_name).members[1].name.clear();
     let error = core_err(validate(&empty_name));
     cases.error(
         "display_basis_points: validates the card first",
@@ -544,7 +562,7 @@ fn basis_point_cases(cases: &mut Cases) {
 
 fn template_cases(cases: &mut Cases) {
     let pubkey = member_pubkey(1);
-    let template = unsigned_signature_template(PHASE_1_CARD_HASH, &pubkey, SIGNED_AT)
+    let template = unsigned_signature_template(PHASE_1_CARD_HASH, &pubkey, SIGNED_AT, None)
         .unwrap_or_else(|error| panic!("template must build: {error}"));
     let pinned = event_json(&sign(1, template.clone()));
     assert_eq!(pinned, PHASE_2_EVENT);
@@ -560,7 +578,7 @@ fn template_cases(cases: &mut Cases) {
             "content": template.content,
         }),
     );
-    let error = core_err(unsigned_signature_template("ABC", &pubkey, SIGNED_AT));
+    let error = core_err(unsigned_signature_template("ABC", &pubkey, SIGNED_AT, None));
     cases.error(
         "signature_template: invalid_card_hash",
         "signature_template",
@@ -574,6 +592,7 @@ fn template_cases(cases: &mut Cases) {
         PHASE_1_CARD_HASH,
         &off_curve,
         SIGNED_AT,
+        None,
     ));
     cases.error(
         "signature_template: invalid_template_pubkey",
@@ -606,12 +625,12 @@ fn verify_cases(cases: &mut Cases) {
     let valid = signature(&card, 2);
     let signer = verify_signature_event(&card, &valid)
         .unwrap_or_else(|error| panic!("valid event must verify: {error}"));
-    assert_eq!(signer, member_pubkey(2));
+    assert_eq!(signer.pubkey, member_pubkey(2));
     cases.ok(
         "verify_signature: valid member signature",
         "verify_signature",
         json!([card_json(&card), event_json(&valid)]),
-        json!(signer),
+        signer_json(&signer),
     );
 
     let d = |hash: &str| tag(&["d", hash]);
@@ -723,7 +742,7 @@ fn status_cases(cases: &mut Cases) {
     );
 
     let mut one_member = card.clone();
-    one_member.members.truncate(1);
+    v1(&mut one_member).members.truncate(1);
     let error = core_err(card_status(&one_member, &[]));
     cases.error(
         "card_status: validates the card first",
@@ -749,7 +768,7 @@ fn status_cases(cases: &mut Cases) {
 fn supersede_cases(cases: &mut Cases) {
     let old = signed_card(&[1, 2, 3]);
     let mut new = signed_card(&[1, 2, 4]);
-    new.supersedes = Some(hash(&old));
+    v1(&mut new).supersedes = Some(hash(&old));
     let all: Vec<Event> = [1, 2, 3, 4].map(|number| signature(&new, number)).to_vec();
     assert!(check_supersede(&old, &new, &all).is_ok());
     cases.ok(
@@ -760,7 +779,7 @@ fn supersede_cases(cases: &mut Cases) {
     );
 
     let mut wrong = new.clone();
-    wrong.supersedes = Some("c".repeat(64));
+    v1(&mut wrong).supersedes = Some("c".repeat(64));
     let wrong_events: Vec<Event> = [1, 2, 3, 4]
         .map(|number| signature(&wrong, number))
         .to_vec();
@@ -805,7 +824,7 @@ fn supersede_cases(cases: &mut Cases) {
     );
 
     let mut bad_old = old.clone();
-    bad_old.version = 7;
+    v1(&mut bad_old).version = 7;
     let cause = core_err(validate(&bad_old));
     let error = core_err(check_supersede(&bad_old, &new, &all));
     cases.error(
@@ -818,7 +837,7 @@ fn supersede_cases(cases: &mut Cases) {
     );
 
     let mut bad_new = new.clone();
-    bad_new.card_id.clear();
+    v1(&mut bad_new).card_id.clear();
     let cause = core_err(validate(&bad_new));
     let error = core_err(check_supersede(&old, &bad_new, &all));
     cases.error(
@@ -841,6 +860,272 @@ fn supersede_cases(cases: &mut Cases) {
     );
 }
 
+// Version 2 cards: members by pubkey, payout addresses in signatures.
+
+fn v2_card(numbers: &[u8], weights: &[u64]) -> Card {
+    Card::V2(CardV2 {
+        version: 2,
+        card_id: "lagos-2026/llamas".to_owned(),
+        event: "Lagos 2026".to_owned(),
+        team: "Llamas".to_owned(),
+        members: numbers
+            .iter()
+            .zip(weights)
+            .map(|(number, weight)| MemberV2 {
+                pubkey: member_pubkey(*number),
+                weight: *weight,
+                label: (*number != 3).then(|| format!("Member {number}")),
+            })
+            .collect(),
+        rules: RulesV2 {
+            peer_review: None,
+            leave: LeaveRule::KeepPercent { keep_percent: 15 },
+        },
+        supersedes: None,
+    })
+}
+
+/// The version 2 card inside `card`, for cases that change one field.
+fn v2(card: &mut Card) -> &mut CardV2 {
+    match card {
+        Card::V2(card) => card,
+        Card::V1(_) => panic!("expected a version 2 card"),
+    }
+}
+
+fn lud16(number: u8) -> String {
+    format!("member{number}@example.com")
+}
+
+/// A version 2 signature with the given `lud16` tags.
+fn v2_signature_with(card: &Card, key_number: u8, lud16_tags: &[&str]) -> Event {
+    let hash = hash(card);
+    let mut tags = vec![tag(&["d", &hash]), tag(&["splitcard", &hash])];
+    tags.extend(lud16_tags.iter().map(|address| tag(&["lud16", address])));
+    event(key_number, SIGNATURE_KIND, tags)
+}
+
+fn v2_signature(card: &Card, key_number: u8) -> Event {
+    v2_signature_with(card, key_number, &[&lud16(key_number)])
+}
+
+fn v2_cases(cases: &mut Cases) {
+    let card = v2_card(&[1, 2, 3], &[333, 333, 334]);
+    let json = card_json(&card);
+    assert!(json.contains(r#""leave":{"kind":"keep_percent","keep_percent":15}"#));
+    assert!(!json.contains("label\":null"), "member 3 has no label key");
+    cases.ok(
+        "card_hash: version 2 card",
+        "card_hash",
+        json!([json]),
+        json!(hash(&card)),
+    );
+    cases.ok(
+        "validate_card: valid version 2 card",
+        "validate_card",
+        json!([json]),
+        Value::Null,
+    );
+    cases.ok(
+        "display_basis_points: version 2 at 333/333/334",
+        "display_basis_points",
+        json!([json]),
+        basis_points(&card),
+    );
+    let equal = v2_card(&[1, 2, 3], &[1, 1, 1]);
+    let expected = basis_points(&equal);
+    assert_eq!(expected, json!([3334, 3333, 3333]));
+    cases.ok(
+        "display_basis_points: version 2 equal split",
+        "display_basis_points",
+        json!([card_json(&equal)]),
+        expected,
+    );
+    cases.ok(
+        "compute_payouts: version 2 at 333/333/334",
+        "compute_payouts",
+        json!([json, "100000"]),
+        payouts(&card, 100_000),
+    );
+
+    let mut long_label = card.clone();
+    v2(&mut long_label).members[0].label = Some("x".repeat(MAX_LABEL_CHARS + 1));
+    let mut bad_percent = card.clone();
+    v2(&mut bad_percent).rules.leave = LeaveRule::KeepPercent { keep_percent: 100 };
+    let mut v2_version_3 = card.clone();
+    v2(&mut v2_version_3).version = 3;
+    for (code, invalid, details) in [
+        ("invalid_member_label", long_label, json!({ "index": 0 })),
+        (
+            "invalid_leave_keep_percent",
+            bad_percent,
+            json!({ "keep_percent": 100 }),
+        ),
+    ] {
+        let error = core_err(validate(&invalid));
+        cases.error(
+            &format!("validate_card: version 2 {code}"),
+            "validate_card",
+            json!([card_json(&invalid)]),
+            code,
+            error,
+            details,
+        );
+    }
+    // A version 2 card with a version 1 member field.
+    let with_name = json.replacen(r#""weight":333"#, r#""weight":333,"name":"Ann""#, 1);
+    let error = card_json_error(&with_name);
+    cases.error(
+        "validate_card: version 2 member with a version 1 name field",
+        "validate_card",
+        json!([with_name]),
+        "invalid_card_json",
+        &error,
+        json_position(&error),
+    );
+    // Only "version": 2 selects the version 2 schema.
+    let error = card_json_error(&card_json(&v2_version_3));
+    cases.error(
+        "validate_card: version 2 shape under version 3",
+        "validate_card",
+        json!([card_json(&v2_version_3)]),
+        "invalid_card_json",
+        &error,
+        json_position(&error),
+    );
+}
+
+fn v2_signature_cases(cases: &mut Cases) {
+    let card = v2_card(&[1, 2, 3], &[333, 333, 334]);
+    let json = card_json(&card);
+
+    // Templates.
+    let card_hash = hash(&card);
+    let pubkey = member_pubkey(1);
+    let template = unsigned_signature_template(&card_hash, &pubkey, SIGNED_AT, Some(&lud16(1)))
+        .unwrap_or_else(|error| panic!("template must build: {error}"));
+    cases.ok(
+        "signature_template: version 2 with a lud16 tag",
+        "signature_template",
+        json!([card_hash, pubkey, SIGNED_AT, lud16(1)]),
+        json!({
+            "pubkey": template.pubkey.to_hex(),
+            "created_at": template.created_at.as_secs(),
+            "kind": template.kind.as_u16(),
+            "tags": template.tags.iter().map(|tag| tag.as_slice().to_vec()).collect::<Vec<_>>(),
+            "content": template.content,
+        }),
+    );
+    let error = core_err(unsigned_signature_template(
+        &card_hash,
+        &pubkey,
+        SIGNED_AT,
+        Some("Member1@Example.com"),
+    ));
+    cases.error(
+        "signature_template: invalid_template_lightning_address",
+        "signature_template",
+        json!([card_hash, pubkey, SIGNED_AT, "Member1@Example.com"]),
+        "invalid_template_lightning_address",
+        error,
+        Value::Null,
+    );
+
+    // Verification.
+    let valid = v2_signature(&card, 2);
+    let signer = verify_signature_event(&card, &valid)
+        .unwrap_or_else(|error| panic!("must verify: {error}"));
+    assert_eq!(signer.lightning_address, Some(lud16(2)));
+    cases.ok(
+        "verify_signature: version 2 returns the signed address",
+        "verify_signature",
+        json!([json, event_json(&valid)]),
+        signer_json(&signer),
+    );
+    for (code, event) in [
+        ("missing_lud16_tag", v2_signature_with(&card, 2, &[])),
+        (
+            "multiple_lud16_tags",
+            v2_signature_with(&card, 2, &[&lud16(2), "other@example.com"]),
+        ),
+        (
+            "invalid_lud16",
+            v2_signature_with(&card, 2, &["Member2@Example.com"]),
+        ),
+    ] {
+        let error = core_err(verify_signature_event(&card, &event));
+        cases.error(
+            &format!("verify_signature: version 2 {code}"),
+            "verify_signature",
+            json!([json, event_json(&event)]),
+            code,
+            error,
+            Value::Null,
+        );
+    }
+    let v1 = signed_card(&[1, 2, 3]);
+    let with_tag = v2_signature_with(&v1, 2, &[&lud16(2)]);
+    let error = core_err(verify_signature_event(&v1, &with_tag));
+    cases.error(
+        "verify_signature: unexpected_lud16_tag on a version 1 card",
+        "verify_signature",
+        json!([card_json(&v1), event_json(&with_tag)]),
+        "unexpected_lud16_tag",
+        error,
+        Value::Null,
+    );
+}
+
+fn v2_status_cases(cases: &mut Cases) {
+    let card = v2_card(&[1, 2, 3], &[333, 333, 334]);
+    let json = card_json(&card);
+
+    // Status.
+    let draft = [
+        v2_signature(&card, 3),
+        v2_signature_with(&card, 2, &[]),
+        v2_signature(&card, 1),
+    ];
+    let expected = status(&card, &draft, &["missing_lud16_tag"]);
+    assert_eq!(expected["missing"], json!(pubkeys(&[2])));
+    cases.ok(
+        "card_status: version 2 draft reports each signed address",
+        "card_status",
+        json!([json, events_json(&draft)]),
+        expected,
+    );
+
+    // Superseding a version 1 card with a version 2 card.
+    let old = signed_card(&[1, 2, 3]);
+    let mut new = v2_card(&[1, 2, 4], &[1, 1, 1]);
+    v2(&mut new).supersedes = Some(hash(&old));
+    let all: Vec<Event> = [1, 2, 3, 4]
+        .map(|number| v2_signature(&new, number))
+        .to_vec();
+    assert!(check_supersede(&old, &new, &all).is_ok());
+    cases.ok(
+        "check_supersede: version 2 replaces version 1",
+        "check_supersede",
+        json!([card_json(&old), card_json(&new), events_json(&all)]),
+        Value::Null,
+    );
+    let mut removed_without_tag = all.clone();
+    removed_without_tag[2] = v2_signature_with(&new, 3, &[]);
+    let error = core_err(check_supersede(&old, &new, &removed_without_tag));
+    cases.error(
+        "check_supersede: removed member's signature needs a lud16 tag on a version 2 card",
+        "check_supersede",
+        json!([
+            card_json(&old),
+            card_json(&new),
+            events_json(&removed_without_tag)
+        ]),
+        "missing_old_member_signatures",
+        error,
+        json!({ "missing": pubkeys(&[3]) }),
+    );
+}
+
 fn generate() -> Value {
     let mut cases = Cases(Vec::new());
     card_hash_cases(&mut cases);
@@ -851,6 +1136,9 @@ fn generate() -> Value {
     verify_cases(&mut cases);
     status_cases(&mut cases);
     supersede_cases(&mut cases);
+    v2_cases(&mut cases);
+    v2_signature_cases(&mut cases);
+    v2_status_cases(&mut cases);
     json!({
         "generated_by": "cargo test -p splitcard-wasm --test parity_fixtures (set SPLITCARD_UPDATE_FIXTURES=1 to rewrite)",
         "cases": cases.0,

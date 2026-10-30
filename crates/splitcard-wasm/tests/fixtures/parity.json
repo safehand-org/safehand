@@ -49,15 +49,15 @@
     },
     {
       "args": [
-        "{\"version\":2,\"card_id\":\"btcpp-lagos-2026/team-42\",\"event\":\"BTC++ Lagos 2026\",\"team\":\"Team 42\",\"members\":[{\"pubkey\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"name\":\"Ada\",\"weight\":36,\"payout\":{\"lightning\":{\"address\":\"ada@example.com\"}}},{\"pubkey\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"name\":\"Bola\",\"weight\":35,\"payout\":{\"lightning\":{\"address\":\"bola@example.org\"}}},{\"pubkey\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"name\":\"Chidi\",\"weight\":29,\"payout\":{\"lightning\":{\"address\":\"chidi@example.net\"}}}],\"rules\":{\"peer_review\":{\"max_shift_points\":10}},\"supersedes\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+        "{\"version\":3,\"card_id\":\"btcpp-lagos-2026/team-42\",\"event\":\"BTC++ Lagos 2026\",\"team\":\"Team 42\",\"members\":[{\"pubkey\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"name\":\"Ada\",\"weight\":36,\"payout\":{\"lightning\":{\"address\":\"ada@example.com\"}}},{\"pubkey\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"name\":\"Bola\",\"weight\":35,\"payout\":{\"lightning\":{\"address\":\"bola@example.org\"}}},{\"pubkey\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"name\":\"Chidi\",\"weight\":29,\"payout\":{\"lightning\":{\"address\":\"chidi@example.net\"}}}],\"rules\":{\"peer_review\":{\"max_shift_points\":10}},\"supersedes\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
       ],
       "expected": {
         "error": {
           "code": "unsupported_version",
           "details": {
-            "version": 2
+            "version": 3
           },
-          "message": "unsupported card version 2"
+          "message": "unsupported card version 3"
         }
       },
       "function": "validate_card",
@@ -649,7 +649,10 @@
         "{\"id\":\"8017580bfdb81e683b295e7fb28c8ebb85e353cda28317c7ba32cba5bed9e139\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"1fe737782630dce896af22e8fb43c6c3189949233884296bfdaaecbedf935e8a\"],[\"splitcard\",\"1fe737782630dce896af22e8fb43c6c3189949233884296bfdaaecbedf935e8a\"]],\"content\":\"I agree to this split.\",\"sig\":\"9c089b3919a4c8cbb37d355ed7a54cf6dd750b0a728a8e339f777b72b3f558d536eccafba92673b587b87b34ee64ccd4a33b6df19cdefdb95c7e5e80a554855e\"}"
       ],
       "expected": {
-        "ok": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+        "ok": {
+          "lightning_address": null,
+          "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+        }
       },
       "function": "verify_signature",
       "name": "verify_signature: valid member signature"
@@ -841,7 +844,10 @@
             }
           ],
           "signed": [
-            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            {
+              "lightning_address": null,
+              "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            }
           ],
           "status": "draft"
         }
@@ -869,9 +875,18 @@
             }
           ],
           "signed": [
-            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-            "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            {
+              "lightning_address": null,
+              "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            },
+            {
+              "lightning_address": null,
+              "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "lightning_address": null,
+              "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            }
           ],
           "status": "active"
         }
@@ -1048,6 +1063,332 @@
       },
       "function": "check_supersede",
       "name": "check_supersede: malformed old card JSON"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "ok": "29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024"
+      },
+      "function": "card_hash",
+      "name": "card_hash: version 2 card"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "ok": null
+      },
+      "function": "validate_card",
+      "name": "validate_card: valid version 2 card"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "ok": [
+          3330,
+          3330,
+          3340
+        ]
+      },
+      "function": "display_basis_points",
+      "name": "display_basis_points: version 2 at 333/333/334"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":1,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":1,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":1}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "ok": [
+          3334,
+          3333,
+          3333
+        ]
+      },
+      "function": "display_basis_points",
+      "name": "display_basis_points: version 2 equal split"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}",
+        "100000"
+      ],
+      "expected": {
+        "ok": [
+          {
+            "amount_sats": "33300",
+            "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+          },
+          {
+            "amount_sats": "33300",
+            "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          },
+          {
+            "amount_sats": "33400",
+            "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+          }
+        ]
+      },
+      "function": "compute_payouts",
+      "name": "compute_payouts: version 2 at 333/333/334"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_member_label",
+          "details": {
+            "index": 0
+          },
+          "message": "member 0 label must be 1 to 40 characters with no control characters"
+        }
+      },
+      "function": "validate_card",
+      "name": "validate_card: version 2 invalid_member_label"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":100}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_leave_keep_percent",
+          "details": {
+            "keep_percent": 100
+          },
+          "message": "leave keep_percent 100 must be between 1 and 99"
+        }
+      },
+      "function": "validate_card",
+      "name": "validate_card: version 2 invalid_leave_keep_percent"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"name\":\"Ann\",\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_card_json",
+          "details": {
+            "column": 187,
+            "line": 1
+          },
+          "message": "unknown field `name`, expected one of `pubkey`, `weight`, `label` at line 1 column 187"
+        }
+      },
+      "function": "validate_card",
+      "name": "validate_card: version 2 member with a version 1 name field"
+    },
+    {
+      "args": [
+        "{\"version\":3,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_card_json",
+          "details": {
+            "column": 188,
+            "line": 1
+          },
+          "message": "unknown field `label`, expected one of `pubkey`, `name`, `weight`, `payout` at line 1 column 188"
+        }
+      },
+      "function": "validate_card",
+      "name": "validate_card: version 2 shape under version 3"
+    },
+    {
+      "args": [
+        "29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024",
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        1700000000,
+        "member1@example.com"
+      ],
+      "expected": {
+        "ok": {
+          "content": "",
+          "created_at": 1700000000,
+          "kind": 30078,
+          "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "tags": [
+            [
+              "d",
+              "29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024"
+            ],
+            [
+              "splitcard",
+              "29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024"
+            ],
+            [
+              "lud16",
+              "member1@example.com"
+            ]
+          ]
+        }
+      },
+      "function": "signature_template",
+      "name": "signature_template: version 2 with a lud16 tag"
+    },
+    {
+      "args": [
+        "29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024",
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        1700000000,
+        "Member1@Example.com"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_template_lightning_address",
+          "details": null,
+          "message": "lightning address must be a lowercase LUD-16 address"
+        }
+      },
+      "function": "signature_template",
+      "name": "signature_template: invalid_template_lightning_address"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}",
+        "{\"id\":\"90fec2e4153b2f925357971a76763d77e340c41adcc03d4d4603b906b9d53709\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"lud16\",\"member2@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"724a06b938635a913cc172e5869a676c51495dc1168dc58dbe4fd592b9b22f2f55335623673f4ee3f423940d5c8facbe479efd2a766a1895bfd9f27a0659e675\"}"
+      ],
+      "expected": {
+        "ok": {
+          "lightning_address": "member2@example.com",
+          "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+        }
+      },
+      "function": "verify_signature",
+      "name": "verify_signature: version 2 returns the signed address"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}",
+        "{\"id\":\"f45f6fd9c5356eec15c5db296bff327f13a89711decae950b1b6f225a9f4dc5f\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"]],\"content\":\"I agree to this split.\",\"sig\":\"17f8041da5bb9db2a729cd5e1dcc8211b10045ed742378234863b58922e3f1afc26fec6e496106d0e7ee7d57d6a03079644f94c3d529bfb95ddb0f19eac93709\"}"
+      ],
+      "expected": {
+        "error": {
+          "code": "missing_lud16_tag",
+          "details": null,
+          "message": "event is missing its lud16 tag"
+        }
+      },
+      "function": "verify_signature",
+      "name": "verify_signature: version 2 missing_lud16_tag"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}",
+        "{\"id\":\"3def027a863fba20685ed69d590399eedb73c64114c95121276b23e506553ca0\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"lud16\",\"member2@example.com\"],[\"lud16\",\"other@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"65d50015c34d3f55242a8d8ffa43352b607c0879a80a9c4fc4afa1590a971725afc557371d84d3e1b05d0b86b65bde75ec24437489ba3d6fad67dd791a260227\"}"
+      ],
+      "expected": {
+        "error": {
+          "code": "multiple_lud16_tags",
+          "details": null,
+          "message": "event has multiple lud16 tags"
+        }
+      },
+      "function": "verify_signature",
+      "name": "verify_signature: version 2 multiple_lud16_tags"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}",
+        "{\"id\":\"5236791b3baa5cf302a221726b8ea94b243c72c644bd339a2e4ddbbeb1feb7cf\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"lud16\",\"Member2@Example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"8f4fbcf826d78f81aca3652bfade86b557af05c3a8951d20d1634cb4c47ee5cf348630c572d932e0d68fda35fbbc51c48a130ef2767af3865bb65aaec6ec8b2e\"}"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_lud16",
+          "details": null,
+          "message": "event lud16 tag is not a lowercase LUD-16 Lightning Address"
+        }
+      },
+      "function": "verify_signature",
+      "name": "verify_signature: version 2 invalid_lud16"
+    },
+    {
+      "args": [
+        "{\"version\":1,\"card_id\":\"phase-3/team-1\",\"event\":\"Phase 3\",\"team\":\"Team 1\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"name\":\"Member 1\",\"weight\":1,\"payout\":{\"lightning\":{\"address\":\"member1@example.com\"}}},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"name\":\"Member 2\",\"weight\":2,\"payout\":{\"lightning\":{\"address\":\"member2@example.com\"}}},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"name\":\"Member 3\",\"weight\":3,\"payout\":{\"lightning\":{\"address\":\"member3@example.com\"}}}],\"rules\":{\"peer_review\":null},\"supersedes\":null}",
+        "{\"id\":\"80e9132eb971a306b57353b71aae5b0b91a9d4c649326ae5d2086029281f9047\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"1fe737782630dce896af22e8fb43c6c3189949233884296bfdaaecbedf935e8a\"],[\"splitcard\",\"1fe737782630dce896af22e8fb43c6c3189949233884296bfdaaecbedf935e8a\"],[\"lud16\",\"member2@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"e3b28476ab30999c531423f217484bb9fdad152d4d78b0a0df75ff7d417240e0f922cd7732da933a6ac4cff2a7cdc95b07ee90196e5cc83718254f534e6ca768\"}"
+      ],
+      "expected": {
+        "error": {
+          "code": "unexpected_lud16_tag",
+          "details": null,
+          "message": "event has a lud16 tag, but version 1 cards hold payout addresses in the card"
+        }
+      },
+      "function": "verify_signature",
+      "name": "verify_signature: unexpected_lud16_tag on a version 1 card"
+    },
+    {
+      "args": [
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":333,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":333,\"label\":\"Member 2\"},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"weight\":334}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":null}",
+        "[{\"id\":\"b00844ab07f72343d6eae55d8bea51aab018b69dbe1728be7f545e13f179b9d5\",\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"lud16\",\"member3@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"b603c414f7be8eca856a2b2d26ca9df98afebe91c0b2fba275535f9c7acfbdb4e6161dee65033d41ff2b2efd691e359c7f2c7df47641c122e63ed785ac1bed3a\"},{\"id\":\"f45f6fd9c5356eec15c5db296bff327f13a89711decae950b1b6f225a9f4dc5f\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"]],\"content\":\"I agree to this split.\",\"sig\":\"17f8041da5bb9db2a729cd5e1dcc8211b10045ed742378234863b58922e3f1afc26fec6e496106d0e7ee7d57d6a03079644f94c3d529bfb95ddb0f19eac93709\"},{\"id\":\"f3f00aac64963c8252aa434a599be69efffd2bc1955abc85ca170e1956aca9d3\",\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"splitcard\",\"29606e2ac12b0d7235d2ac7b8d9f131b775b674868cbe4f7d6bae2af9c509024\"],[\"lud16\",\"member1@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"6b58a4565ee253cfc55837daa1b2a7cd09fe45bdc94ba47822b8f0744db9a71d87e56d5bbca26cfd116e88b5faee35f616ab9d33c134ba52818738a7a4e156be\"}]"
+      ],
+      "expected": {
+        "ok": {
+          "missing": [
+            "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          ],
+          "rejected": [
+            {
+              "code": "missing_lud16_tag",
+              "event_id": "f45f6fd9c5356eec15c5db296bff327f13a89711decae950b1b6f225a9f4dc5f",
+              "message": "event is missing its lud16 tag"
+            }
+          ],
+          "signed": [
+            {
+              "lightning_address": "member1@example.com",
+              "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            },
+            {
+              "lightning_address": "member3@example.com",
+              "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            }
+          ],
+          "status": "draft"
+        }
+      },
+      "function": "card_status",
+      "name": "card_status: version 2 draft reports each signed address"
+    },
+    {
+      "args": [
+        "{\"version\":1,\"card_id\":\"phase-3/team-1\",\"event\":\"Phase 3\",\"team\":\"Team 1\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"name\":\"Member 1\",\"weight\":1,\"payout\":{\"lightning\":{\"address\":\"member1@example.com\"}}},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"name\":\"Member 2\",\"weight\":2,\"payout\":{\"lightning\":{\"address\":\"member2@example.com\"}}},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"name\":\"Member 3\",\"weight\":3,\"payout\":{\"lightning\":{\"address\":\"member3@example.com\"}}}],\"rules\":{\"peer_review\":null},\"supersedes\":null}",
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":1,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":1,\"label\":\"Member 2\"},{\"pubkey\":\"e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13\",\"weight\":1,\"label\":\"Member 4\"}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":\"1fe737782630dce896af22e8fb43c6c3189949233884296bfdaaecbedf935e8a\"}",
+        "[{\"id\":\"2004cd4f32bf27ea02c7ba730b56b39d106e2b07f8832d87bfd5e02c3792a0cd\",\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member1@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"ee79399d17578245fbb0b98ba83082ddd50d1498e23521fd2db0483b397dfebfe1e5acd13fc3fad82e99dac1c4a1311c0d8b1882c9c079acda57364522a5d1e7\"},{\"id\":\"9caf54d80e02f79edaab538c298822d0fed13ed3692b93206e14bd87cc98d47b\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member2@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"3fda07e6a5f185a26e925e9d5cdb1e8e1ce7649d1818948454429fb046d606c2635eeb2c9cace6857743432ccccea4cf266b4c7ee85972264446d63a64d8c014\"},{\"id\":\"09e217aaac5d3380239a90ccd85ba869d9918b927f9a5d2f4d009efb9b621700\",\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member3@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"0d642f1cd97610f5bceaa65a8a1dc132309ab539db073253706edc6665d7af192b879ef65bed4f5b148bca7a4eae9a152d34183d2855e024dd61984cb2f5302c\"},{\"id\":\"7ed103466863c1f087601570420287bc6e217c6d7a5fccfcfdbb4d40a4b77a21\",\"pubkey\":\"e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member4@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"e0077515b07b57a1129a2b923353edb2f20cdcb95bc1ba3e23925f8504f791654c1338ff9c9d64e83990ab3f0c04e4a61ae90d03f73e63c9e2203324f0621efe\"}]"
+      ],
+      "expected": {
+        "ok": null
+      },
+      "function": "check_supersede",
+      "name": "check_supersede: version 2 replaces version 1"
+    },
+    {
+      "args": [
+        "{\"version\":1,\"card_id\":\"phase-3/team-1\",\"event\":\"Phase 3\",\"team\":\"Team 1\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"name\":\"Member 1\",\"weight\":1,\"payout\":{\"lightning\":{\"address\":\"member1@example.com\"}}},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"name\":\"Member 2\",\"weight\":2,\"payout\":{\"lightning\":{\"address\":\"member2@example.com\"}}},{\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"name\":\"Member 3\",\"weight\":3,\"payout\":{\"lightning\":{\"address\":\"member3@example.com\"}}}],\"rules\":{\"peer_review\":null},\"supersedes\":null}",
+        "{\"version\":2,\"card_id\":\"lagos-2026/llamas\",\"event\":\"Lagos 2026\",\"team\":\"Llamas\",\"members\":[{\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"weight\":1,\"label\":\"Member 1\"},{\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"weight\":1,\"label\":\"Member 2\"},{\"pubkey\":\"e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13\",\"weight\":1,\"label\":\"Member 4\"}],\"rules\":{\"peer_review\":null,\"leave\":{\"kind\":\"keep_percent\",\"keep_percent\":15}},\"supersedes\":\"1fe737782630dce896af22e8fb43c6c3189949233884296bfdaaecbedf935e8a\"}",
+        "[{\"id\":\"2004cd4f32bf27ea02c7ba730b56b39d106e2b07f8832d87bfd5e02c3792a0cd\",\"pubkey\":\"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member1@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"ee79399d17578245fbb0b98ba83082ddd50d1498e23521fd2db0483b397dfebfe1e5acd13fc3fad82e99dac1c4a1311c0d8b1882c9c079acda57364522a5d1e7\"},{\"id\":\"9caf54d80e02f79edaab538c298822d0fed13ed3692b93206e14bd87cc98d47b\",\"pubkey\":\"c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member2@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"3fda07e6a5f185a26e925e9d5cdb1e8e1ce7649d1818948454429fb046d606c2635eeb2c9cace6857743432ccccea4cf266b4c7ee85972264446d63a64d8c014\"},{\"id\":\"c6289071d122c9fd70bb1d758a3bba9b36429e6122ab22f6d118ce3b042456d1\",\"pubkey\":\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"]],\"content\":\"I agree to this split.\",\"sig\":\"59d6f293fff7666a910d06e0a745e1be5f00d7f11fe58c3e6877318358ea299d06937974745efd185957e9db49a3fa7ed9e1dc9bc8a88d14831ac8a508f34669\"},{\"id\":\"7ed103466863c1f087601570420287bc6e217c6d7a5fccfcfdbb4d40a4b77a21\",\"pubkey\":\"e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13\",\"created_at\":1700000000,\"kind\":30078,\"tags\":[[\"d\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"splitcard\",\"eccb460a93ed4d3dfe9f36f44a23b3c89f7a1ad5a75d3a735a0f91e371d4b20b\"],[\"lud16\",\"member4@example.com\"]],\"content\":\"I agree to this split.\",\"sig\":\"e0077515b07b57a1129a2b923353edb2f20cdcb95bc1ba3e23925f8504f791654c1338ff9c9d64e83990ab3f0c04e4a61ae90d03f73e63c9e2203324f0621efe\"}]"
+      ],
+      "expected": {
+        "error": {
+          "code": "missing_old_member_signatures",
+          "details": {
+            "missing": [
+              "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            ]
+          },
+          "message": "old card members missing signatures: [\"f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\"]"
+        }
+      },
+      "function": "check_supersede",
+      "name": "check_supersede: removed member's signature needs a lud16 tag on a version 2 card"
     }
   ],
   "generated_by": "cargo test -p splitcard-wasm --test parity_fixtures (set SPLITCARD_UPDATE_FIXTURES=1 to rewrite)"

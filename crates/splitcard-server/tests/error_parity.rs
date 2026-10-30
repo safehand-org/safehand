@@ -28,8 +28,10 @@ fn validation_errors() -> Vec<ValidationError> {
             weight: u64::MAX,
         },
         ValidationError::InvalidLightningAddress { index: 1 },
+        ValidationError::InvalidMemberLabel { index: 1 },
         ValidationError::InvalidSupersedes,
         ValidationError::InvalidPeerReviewMaxShiftPoints,
+        ValidationError::InvalidLeaveKeepPercent { keep_percent: 100 },
     ]
 }
 
@@ -53,6 +55,10 @@ fn signature_errors_match_wasm() {
             SignatureError::MissingSplitcardTag,
             SignatureError::MultipleSplitcardTags,
             SignatureError::WrongSplitcardTagHash,
+            SignatureError::MissingLud16Tag,
+            SignatureError::MultipleLud16Tags,
+            SignatureError::InvalidLud16,
+            SignatureError::UnexpectedLud16Tag,
             SignatureError::NonMember,
         ]
     };

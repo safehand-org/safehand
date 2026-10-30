@@ -7,12 +7,12 @@ use proptest::prelude::*;
 use secp256k1::Secp256k1;
 
 use crate::{
-    card::{Card, Member, Payout, PeerReview, Rules},
+    card::{Card, CardV1, Member, Payout, PeerReview, Rules},
     error::{PayoutError, SplitError, ValidationError},
     hash::card_hash_hex,
     signature::{
-        SIGNATURE_KIND, SignatureError, SignatureTemplateError, unsigned_signature_template,
-        verify_signature_event,
+        SIGNATURE_KIND, SignatureError, SignatureTemplateError, Signer,
+        unsigned_signature_template, verify_signature_event,
     },
     split::{compute_payouts, display_basis_points, split},
     status::{CardStatus, StatusError, StatusReport, card_status},
@@ -25,7 +25,7 @@ fn pubkey(number: u8) -> String {
 }
 
 fn fixture_card() -> Card {
-    Card {
+    Card::V1(CardV1 {
         version: 1,
         card_id: "btcpp-lagos-2026/team-42".to_owned(),
         event: "BTC++ Lagos 2026".to_owned(),
@@ -62,6 +62,14 @@ fn fixture_card() -> Card {
             }),
         },
         supersedes: Some("a".repeat(64)),
+    })
+}
+
+/// The version 1 card inside `card`, for tests that change one field.
+fn v1(card: &mut Card) -> &mut CardV1 {
+    match card {
+        Card::V1(card) => card,
+        Card::V2(_) => panic!("expected a version 1 card"),
     }
 }
 
@@ -88,7 +96,7 @@ fn fixture_card_has_pinned_hash() {
 
 #[test]
 fn reordered_json_and_whitespace_preserve_hash() {
-    let parsed: Card = serde_json::from_str(
+    let parsed = Card::from_json(
         r#"
         {
           "team": "Team 42",
@@ -117,42 +125,43 @@ fn changing_any_card_field_changes_hash() {
     let mut changes = Vec::new();
 
     let mut card = original.clone();
-    card.version = 2;
+    v1(&mut card).version = 2;
     changes.push(card);
     let mut card = original.clone();
-    card.card_id.push('x');
+    v1(&mut card).card_id.push('x');
     changes.push(card);
     let mut card = original.clone();
-    card.event.push('x');
+    v1(&mut card).event.push('x');
     changes.push(card);
     let mut card = original.clone();
-    card.team.push('x');
+    v1(&mut card).team.push('x');
     changes.push(card);
     let mut card = original.clone();
-    card.members[0].pubkey = pubkey(9);
+    v1(&mut card).members[0].pubkey = pubkey(9);
     changes.push(card);
     let mut card = original.clone();
-    card.members[0].name.push('x');
+    v1(&mut card).members[0].name.push('x');
     changes.push(card);
     let mut card = original.clone();
-    card.members[0].weight += 1;
+    v1(&mut card).members[0].weight += 1;
     changes.push(card);
     let mut card = original.clone();
-    let Payout::Lightning { address } = &mut card.members[0].payout;
+    let Payout::Lightning { address } = &mut v1(&mut card).members[0].payout;
     address.push('x');
     changes.push(card);
     let mut card = original.clone();
-    card.rules.peer_review = None;
+    v1(&mut card).rules.peer_review = None;
     changes.push(card);
     let mut card = original.clone();
-    card.rules
+    v1(&mut card)
+        .rules
         .peer_review
         .as_mut()
         .unwrap_or_else(|| panic!("fixture has peer review"))
         .max_shift_points += 1;
     changes.push(card);
     let mut card = original.clone();
-    card.supersedes = None;
+    v1(&mut card).supersedes = None;
     changes.push(card);
 
     for changed in changes {
@@ -168,63 +177,64 @@ fn validation_accepts_fixture() {
 #[test]
 fn every_validation_error_variant_is_reachable() {
     let mut card = fixture_card();
-    card.version = 2;
+    v1(&mut card).version = 2;
     assert!(matches!(
         validate(&card),
         Err(ValidationError::UnsupportedVersion { .. })
     ));
 
     let mut card = fixture_card();
-    card.card_id.clear();
+    v1(&mut card).card_id.clear();
     assert!(matches!(
         validate(&card),
         Err(ValidationError::EmptyField { .. })
     ));
 
     let mut card = fixture_card();
-    card.members.truncate(1);
+    v1(&mut card).members.truncate(1);
     assert!(matches!(
         validate(&card),
         Err(ValidationError::InvalidMemberCount { .. })
     ));
 
     let mut card = fixture_card();
-    card.members[0].pubkey = "A".repeat(64);
+    v1(&mut card).members[0].pubkey = "A".repeat(64);
     assert!(matches!(
         validate(&card),
         Err(ValidationError::InvalidPubkey { .. })
     ));
 
     let mut card = fixture_card();
-    card.members[1].pubkey = card.members[0].pubkey.clone();
+    let first = v1(&mut card).members[0].pubkey.clone();
+    v1(&mut card).members[1].pubkey = first;
     assert!(matches!(
         validate(&card),
         Err(ValidationError::DuplicatePubkey { .. })
     ));
 
     let mut card = fixture_card();
-    card.members[0].name.clear();
+    v1(&mut card).members[0].name.clear();
     assert!(matches!(
         validate(&card),
         Err(ValidationError::EmptyMemberName { .. })
     ));
 
     let mut card = fixture_card();
-    card.members[0].weight = 0;
+    v1(&mut card).members[0].weight = 0;
     assert!(matches!(
         validate(&card),
         Err(ValidationError::ZeroWeight { .. })
     ));
 
     let mut card = fixture_card();
-    card.members[0].weight = MAX_WEIGHT + 1;
+    v1(&mut card).members[0].weight = MAX_WEIGHT + 1;
     assert!(matches!(
         validate(&card),
         Err(ValidationError::WeightTooLarge { .. })
     ));
 
     let mut card = fixture_card();
-    let Payout::Lightning { address } = &mut card.members[0].payout;
+    let Payout::Lightning { address } = &mut v1(&mut card).members[0].payout;
     address.clear();
     assert!(matches!(
         validate(&card),
@@ -232,14 +242,14 @@ fn every_validation_error_variant_is_reachable() {
     ));
 
     let mut card = fixture_card();
-    card.supersedes = Some("A".repeat(64));
+    v1(&mut card).supersedes = Some("A".repeat(64));
     assert!(matches!(
         validate(&card),
         Err(ValidationError::InvalidSupersedes)
     ));
 
     let mut card = fixture_card();
-    card.rules.peer_review = Some(PeerReview {
+    v1(&mut card).rules.peer_review = Some(PeerReview {
         max_shift_points: 0,
     });
     assert!(matches!(
@@ -303,7 +313,7 @@ fn compute_payouts_validates_and_preserves_member_order() {
 
 fn card_with_weights(weights: &[u64]) -> Card {
     let mut card = fixture_card();
-    card.members = weights
+    v1(&mut card).members = weights
         .iter()
         .zip(1_u8..)
         .map(|(weight, number)| Member {
@@ -320,7 +330,7 @@ fn card_with_weights(weights: &[u64]) -> Card {
 
 fn card_with_address(address: &str) -> Card {
     let mut card = fixture_card();
-    card.members[1].payout = Payout::Lightning {
+    v1(&mut card).members[1].payout = Payout::Lightning {
         address: address.to_owned(),
     };
     card
@@ -451,7 +461,7 @@ fn member_pubkey(number: u8) -> String {
 }
 
 fn signed_card(numbers: &[u8]) -> Card {
-    Card {
+    Card::V1(CardV1 {
         version: 1,
         card_id: "phase-2/team-1".to_owned(),
         event: "Phase 2".to_owned(),
@@ -470,7 +480,7 @@ fn signed_card(numbers: &[u8]) -> Card {
             .collect(),
         rules: Rules { peer_review: None },
         supersedes: None,
-    }
+    })
 }
 
 fn tag(parts: &[&str]) -> Tag {
@@ -515,6 +525,18 @@ fn valid_signature(card: &Card, key_number: u8) -> Event {
     sign_event(key_number, SIGNATURE_KIND, tags(&hash, 1, 1))
 }
 
+/// A version 1 signer: no payout address in the signature.
+fn v1_signer(number: u8) -> Signer {
+    Signer {
+        pubkey: member_pubkey(number),
+        lightning_address: None,
+    }
+}
+
+fn v1_signers(numbers: &[u8]) -> Vec<Signer> {
+    numbers.iter().map(|number| v1_signer(*number)).collect()
+}
+
 fn pubkeys(numbers: &[u8]) -> Vec<String> {
     numbers
         .iter()
@@ -536,7 +558,7 @@ fn rejected_ids(report: &StatusReport) -> Vec<EventId> {
 fn signature_template_has_exact_fields() {
     let card = signed_card(&[1, 2, 3]);
     let hash = hash_hex(&card);
-    let template = unsigned_signature_template(&hash, &member_pubkey(1), 123)
+    let template = unsigned_signature_template(&hash, &member_pubkey(1), 123, None)
         .unwrap_or_else(|error| panic!("template must build: {error}"));
     assert_eq!(template.pubkey, nostr_keys(1).public_key());
     assert_eq!(template.created_at, Timestamp::from_secs(123));
@@ -559,7 +581,7 @@ fn signature_template_rejects_bad_card_hash() {
         "g".repeat(64),
     ] {
         assert_eq!(
-            unsigned_signature_template(&bad_hash, &pubkey, 1),
+            unsigned_signature_template(&bad_hash, &pubkey, 1, None),
             Err(SignatureTemplateError::InvalidCardHash)
         );
     }
@@ -572,7 +594,7 @@ fn signature_template_rejects_bad_pubkey() {
     let uppercase = member_pubkey(1).to_uppercase();
     for bad_pubkey in ["", "not hex", &"f".repeat(64), &"a".repeat(63), &uppercase] {
         assert_eq!(
-            unsigned_signature_template(&hash, bad_pubkey, 1),
+            unsigned_signature_template(&hash, bad_pubkey, 1, None),
             Err(SignatureTemplateError::InvalidPubkey)
         );
     }
@@ -585,7 +607,7 @@ fn valid_signature_passes() {
     let card = signed_card(&[1, 2, 3]);
     let event = valid_signature(&card, 1);
     match verify_signature_event(&card, &event) {
-        Ok(signer) => assert_eq!(signer, member_pubkey(1)),
+        Ok(signer) => assert_eq!(signer, v1_signer(1)),
         Err(error) => panic!("valid signature must verify: {error}"),
     }
 }
@@ -594,7 +616,7 @@ fn valid_signature_passes() {
 fn signed_template_verifies_with_extra_tags_and_any_content() {
     let card = signed_card(&[1, 2, 3]);
     let hash = hash_hex(&card);
-    let template = unsigned_signature_template(&hash, &member_pubkey(2), 5)
+    let template = unsigned_signature_template(&hash, &member_pubkey(2), 5, None)
         .unwrap_or_else(|error| panic!("template must build: {error}"));
     let mut event_tags = template.tags.to_vec();
     event_tags.push(tag(&["t", "hackathon"]));
@@ -733,7 +755,7 @@ fn signature_over_card_a_does_not_count_for_tampered_card_b() {
     let card_a = signed_card(&[1, 2, 3]);
     let event = valid_signature(&card_a, 1);
     let mut card_b = card_a.clone();
-    card_b.members[0].weight += 1;
+    v1(&mut card_b).members[0].weight += 1;
     assert!(verify_signature_event(&card_a, &event).is_ok());
     assert!(matches!(
         verify_signature_event(&card_b, &event),
@@ -764,8 +786,9 @@ fn signature_test_vector_is_pinned() {
     let card_hash = "37a9ea893f875cc0d4ad0bc92fdbca5e8ad5cd048a09f3ca28e0057defdbca52";
     assert_eq!(hash_hex(&fixture_card()), card_hash);
     let keys = nostr_keys(1);
-    let template = unsigned_signature_template(card_hash, &keys.public_key().to_hex(), SIGNED_AT)
-        .unwrap_or_else(|error| panic!("template must build: {error}"));
+    let template =
+        unsigned_signature_template(card_hash, &keys.public_key().to_hex(), SIGNED_AT, None)
+            .unwrap_or_else(|error| panic!("template must build: {error}"));
     let event = sign(&keys, template);
     assert!(event.verify_id());
     assert!(event.verify_signature());
@@ -806,7 +829,7 @@ fn status_with_two_of_three_is_draft_with_the_right_member_missing() {
     assert_eq!(
         report.status,
         CardStatus::Draft {
-            signed: pubkeys(&[1, 3]),
+            signed: v1_signers(&[1, 3]),
             missing: pubkeys(&[2]),
         }
     );
@@ -825,7 +848,7 @@ fn status_with_all_three_is_active() {
     assert_eq!(
         report.status,
         CardStatus::Active {
-            signed: pubkeys(&[1, 2, 3]),
+            signed: v1_signers(&[1, 2, 3]),
         }
     );
     assert!(report.rejected.is_empty());
@@ -847,7 +870,7 @@ fn duplicate_signature_counts_once() {
     assert_eq!(
         report.status,
         CardStatus::Draft {
-            signed: pubkeys(&[1]),
+            signed: v1_signers(&[1]),
             missing: pubkeys(&[2, 3]),
         }
     );
@@ -862,7 +885,7 @@ fn non_member_signature_is_rejected_on_draft_card() {
     assert_eq!(
         report.status,
         CardStatus::Draft {
-            signed: pubkeys(&[1]),
+            signed: v1_signers(&[1]),
             missing: pubkeys(&[2, 3]),
         }
     );
@@ -885,7 +908,7 @@ fn non_member_signature_is_rejected_on_active_card() {
     assert_eq!(
         report.status,
         CardStatus::Active {
-            signed: pubkeys(&[1, 2, 3]),
+            signed: v1_signers(&[1, 2, 3]),
         }
     );
     assert_eq!(report.rejected.len(), 1);
@@ -921,7 +944,7 @@ fn rejected_events_keep_input_order() {
 #[test]
 fn status_validates_card_first() {
     let mut card = signed_card(&[1, 2, 3]);
-    card.members.truncate(1);
+    v1(&mut card).members.truncate(1);
     assert!(matches!(
         card_status(&card, &[]),
         Err(StatusError::Validation(
@@ -936,7 +959,7 @@ fn status_validates_card_first() {
 fn replacement() -> (Card, Card) {
     let old = signed_card(&[1, 2, 3]);
     let mut new = signed_card(&[1, 2, 4]);
-    new.supersedes = Some(hash_hex(&old));
+    v1(&mut new).supersedes = Some(hash_hex(&old));
     (old, new)
 }
 
@@ -953,7 +976,7 @@ fn valid_replacement_passes() {
 #[test]
 fn replacement_with_wrong_supersedes_hash_fails() {
     let (old, mut new) = replacement();
-    new.supersedes = Some("b".repeat(64));
+    v1(&mut new).supersedes = Some("b".repeat(64));
     let events: Vec<Event> = [1, 2, 3, 4]
         .into_iter()
         .map(|number| valid_signature(&new, number))
@@ -962,7 +985,7 @@ fn replacement_with_wrong_supersedes_hash_fails() {
         check_supersede(&old, &new, &events),
         Err(SupersedeError::WrongSupersedesHash)
     ));
-    new.supersedes = None;
+    v1(&mut new).supersedes = None;
     assert!(matches!(
         check_supersede(&old, &new, &events),
         Err(SupersedeError::WrongSupersedesHash)
@@ -1007,7 +1030,7 @@ fn supersede_signature_accepts_kept_added_and_removed_members() {
     for number in [1, 2, 3, 4] {
         assert_eq!(
             verify_supersede_signature_event(&old, &new, &valid_signature(&new, number)).ok(),
-            Some(member_pubkey(number)),
+            Some(v1_signer(number)),
         );
     }
 }

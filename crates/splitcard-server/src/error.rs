@@ -13,7 +13,7 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use splitcard_core::{
-    error::{HashError, PayoutError, SplitError, ValidationError},
+    error::{HashError, PayoutAddressError, PayoutError, SplitError, ValidationError},
     signature::SignatureError,
     status::StatusError,
     supersede::SupersedeError,
@@ -131,10 +131,17 @@ impl From<ValidationError> for ApiError {
             ValidationError::InvalidLightningAddress { index } => {
                 ("invalid_lightning_address", json!({ "index": index }))
             }
+            ValidationError::InvalidMemberLabel { index } => {
+                ("invalid_member_label", json!({ "index": index }))
+            }
             ValidationError::InvalidSupersedes => ("invalid_supersedes", Value::Null),
             ValidationError::InvalidPeerReviewMaxShiftPoints => {
                 ("invalid_peer_review_max_shift_points", Value::Null)
             }
+            ValidationError::InvalidLeaveKeepPercent { keep_percent } => (
+                "invalid_leave_keep_percent",
+                json!({ "keep_percent": keep_percent }),
+            ),
         };
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, code, error.to_string()).with_details(details)
     }
@@ -165,6 +172,10 @@ impl From<SignatureError> for ApiError {
             SignatureError::MissingSplitcardTag => "missing_splitcard_tag",
             SignatureError::MultipleSplitcardTags => "multiple_splitcard_tags",
             SignatureError::WrongSplitcardTagHash => "wrong_splitcard_tag_hash",
+            SignatureError::MissingLud16Tag => "missing_lud16_tag",
+            SignatureError::MultipleLud16Tags => "multiple_lud16_tags",
+            SignatureError::InvalidLud16 => "invalid_lud16",
+            SignatureError::UnexpectedLud16Tag => "unexpected_lud16_tag",
             SignatureError::NonMember => "non_member",
             SignatureError::CardHash(inner) => return inner.into(),
         };
@@ -231,6 +242,16 @@ impl From<PayoutError> for ApiError {
                 message,
             )
             .with_details(json!({ "index": index, "pubkey": pubkey })),
+        }
+    }
+}
+
+impl From<PayoutAddressError> for ApiError {
+    fn from(error: PayoutAddressError) -> Self {
+        match error {
+            PayoutAddressError::Validation(inner) => inner.into(),
+            // Payout addresses are only paired for fully signed cards.
+            missing @ PayoutAddressError::MissingSignature { .. } => Self::internal(&missing),
         }
     }
 }

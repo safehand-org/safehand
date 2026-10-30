@@ -5,7 +5,10 @@ use axum::{
     extract::{Path, RawQuery, State},
 };
 use serde::Serialize;
-use splitcard_core::{card::Payout, split::display_basis_points};
+use splitcard_core::{
+    card::{Card, Payout},
+    split::display_basis_points,
+};
 
 use super::{
     cards::{LoadedCard, team_cards},
@@ -107,10 +110,13 @@ fn invite_card(
     created_by_name: String,
     viewer: Option<&str>,
 ) -> Result<InviteCard, ApiError> {
-    let weights: Vec<u64> = loaded.card.members.iter().map(|m| m.weight).collect();
+    // Invites only exist for version 1 cards, whose addresses are in the card.
+    let Card::V1(card) = &loaded.card else {
+        return Err(ApiError::internal(&"invite for a version 2 card"));
+    };
+    let weights: Vec<u64> = card.members.iter().map(|m| m.weight).collect();
     let shares = display_basis_points(&weights)?;
-    let members = loaded
-        .card
+    let members = card
         .members
         .iter()
         .zip(shares)

@@ -1,6 +1,6 @@
 //! Aggregate status of member signatures for one card.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use nostr::event::{Event, EventId};
 use thiserror::Error;
@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::{
     card::Card,
     error::ValidationError,
-    signature::{SignatureError, verify_signature_event},
+    signature::{SignatureError, Signer, verify_signature_event},
     validate::validate,
 };
 
@@ -17,15 +17,17 @@ use crate::{
 pub enum CardStatus {
     /// Some members are still missing signatures.
     Draft {
-        /// Valid signer public keys in card member order.
-        signed: Vec<String>,
+        /// Valid signers in card member order, each with the payout address
+        /// they signed (version 2 cards only).
+        signed: Vec<Signer>,
         /// Missing member public keys in card member order.
         missing: Vec<String>,
     },
     /// Every card member has signed this card hash.
     Active {
-        /// Valid signer public keys in card member order.
-        signed: Vec<String>,
+        /// Valid signers in card member order, each with the payout address
+        /// they signed (version 2 cards only).
+        signed: Vec<Signer>,
     },
 }
 
@@ -52,33 +54,33 @@ pub enum StatusError {
 /// Computes card status from candidate signature events.
 ///
 /// Invalid events are rejected in input order and do not count toward status.
+/// If one member has several valid events, the first in input order counts,
+/// so its payout address is the one reported.
 ///
 /// # Errors
 ///
 /// Returns an error if the card itself is invalid or cannot be hashed.
 pub fn card_status(card: &Card, events: &[Event]) -> Result<StatusReport, StatusError> {
     validate(card)?;
-    let mut signed_keys = BTreeSet::new();
+    let mut signers = BTreeMap::new();
     let mut rejected = Vec::new();
     for event in events {
         match verify_signature_event(card, event) {
-            Ok(pubkey) => {
-                signed_keys.insert(pubkey);
+            Ok(signer) => {
+                signers.entry(signer.pubkey.clone()).or_insert(signer);
             }
             Err(error) => rejected.push((event.id, error)),
         }
     }
-    let signed: Vec<String> = card
-        .members
+    let pubkeys = card.pubkeys();
+    let signed: Vec<Signer> = pubkeys
         .iter()
-        .filter(|member| signed_keys.contains(&member.pubkey))
-        .map(|member| member.pubkey.clone())
+        .filter_map(|pubkey| signers.remove(*pubkey))
         .collect();
-    let missing: Vec<String> = card
-        .members
-        .iter()
-        .filter(|member| !signed_keys.contains(&member.pubkey))
-        .map(|member| member.pubkey.clone())
+    let missing: Vec<String> = pubkeys
+        .into_iter()
+        .filter(|pubkey| !signed.iter().any(|signer| signer.pubkey == *pubkey))
+        .map(str::to_owned)
         .collect();
     let status = if missing.is_empty() {
         CardStatus::Active { signed }

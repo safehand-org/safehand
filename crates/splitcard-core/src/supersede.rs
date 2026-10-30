@@ -9,16 +9,18 @@ use crate::{
     card::Card,
     error::{HashError, ValidationError},
     hash::card_hash_hex,
-    signature::{SignatureError, verify_event_for_hash},
+    signature::{SignatureError, Signer, signed_lightning_address, verify_event_for_hash},
     validate::validate,
 };
 
 /// Verifies one signature event over a superseding card and returns its
-/// signer public key in lowercase hex.
+/// signer, with the payout address signed for a version 2 `new` card.
 ///
 /// Like [`verify_signature_event`](crate::signature::verify_signature_event)
 /// against `new`, except the signer may be a member of either card: removed
-/// members of `old` must sign the new card too. The caller must pass the card
+/// members of `old` must sign the new card too. The `lud16` rule follows
+/// `new`'s version for every signer, removed members included. The caller
+/// must pass the card
 /// `new` supersedes as `old`; [`check_supersede`] checks that link.
 ///
 /// # Errors
@@ -29,12 +31,15 @@ pub fn verify_supersede_signature_event(
     old: &Card,
     new: &Card,
     event: &Event,
-) -> Result<String, SignatureError> {
+) -> Result<Signer, SignatureError> {
     let new_hash = card_hash_hex(new)?;
     let pubkey = verify_event_for_hash(event, &new_hash)?;
-    let is_member = |card: &Card| card.members.iter().any(|member| member.pubkey == pubkey);
-    if is_member(new) || is_member(old) {
-        Ok(pubkey)
+    let lightning_address = signed_lightning_address(new, event)?;
+    if new.is_member(&pubkey) || old.is_member(&pubkey) {
+        Ok(Signer {
+            pubkey,
+            lightning_address,
+        })
     } else {
         Err(SignatureError::NonMember)
     }
@@ -81,21 +86,23 @@ pub fn check_supersede(old: &Card, new: &Card, new_events: &[Event]) -> Result<(
     validate(old).map_err(SupersedeError::InvalidOldCard)?;
     validate(new).map_err(SupersedeError::InvalidNewCard)?;
     let old_hash = card_hash_hex(old)?;
-    if new.supersedes.as_deref() != Some(old_hash.as_str()) {
+    if new.supersedes() != Some(old_hash.as_str()) {
         return Err(SupersedeError::WrongSupersedesHash);
     }
     let new_hash = card_hash_hex(new)?;
     let mut signers = BTreeSet::new();
     for event in new_events {
-        if let Ok(pubkey) = verify_event_for_hash(event, &new_hash) {
+        if let Ok(pubkey) = verify_event_for_hash(event, &new_hash)
+            && signed_lightning_address(new, event).is_ok()
+        {
             signers.insert(pubkey);
         }
     }
     let missing_new: Vec<String> = new
-        .members
-        .iter()
-        .filter(|member| !signers.contains(&member.pubkey))
-        .map(|member| member.pubkey.clone())
+        .pubkeys()
+        .into_iter()
+        .filter(|pubkey| !signers.contains(*pubkey))
+        .map(str::to_owned)
         .collect();
     if !missing_new.is_empty() {
         return Err(SupersedeError::MissingNewMemberSignatures {
@@ -103,10 +110,10 @@ pub fn check_supersede(old: &Card, new: &Card, new_events: &[Event]) -> Result<(
         });
     }
     let missing_old: Vec<String> = old
-        .members
-        .iter()
-        .filter(|member| !signers.contains(&member.pubkey))
-        .map(|member| member.pubkey.clone())
+        .pubkeys()
+        .into_iter()
+        .filter(|pubkey| !signers.contains(*pubkey))
+        .map(str::to_owned)
         .collect();
     if !missing_old.is_empty() {
         return Err(SupersedeError::MissingOldMemberSignatures {

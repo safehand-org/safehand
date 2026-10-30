@@ -88,8 +88,7 @@ pub fn display_basis_points(card_json: &str) -> Result<JsValue, JsValue> {
     let run = || -> Result<Vec<u32>, JsError> {
         let card = parse_card(card_json)?;
         validate(&card)?;
-        let weights: Vec<u64> = card.members.iter().map(|member| member.weight).collect();
-        Ok(split::display_basis_points(&weights)?)
+        Ok(split::display_basis_points(&card.weights())?)
     };
     export(run())
 }
@@ -98,21 +97,31 @@ pub fn display_basis_points(card_json: &str) -> Result<JsValue, JsValue> {
 /// `window.nostr.signEvent`.
 ///
 /// `created_at` is Unix seconds as a whole JS number from 0 to 4294967295.
+/// Pass `lightning_address`, the signer's payout address, for a version 2
+/// card; leave it out for version 1. It becomes the event's `lud16` tag.
 ///
 /// # Errors
 ///
-/// Throws `invalid_created_at`, `invalid_card_hash` or `invalid_template_pubkey`.
+/// Throws `invalid_created_at`, `invalid_card_hash`, `invalid_template_pubkey`
+/// or `invalid_template_lightning_address`.
 #[wasm_bindgen(unchecked_return_type = "UnsignedSignatureEvent")]
+// wasm-bindgen cannot take `Option<&str>`.
+#[allow(clippy::needless_pass_by_value)]
 pub fn signature_template(
     card_hash_hex: &str,
     pubkey: &str,
     #[wasm_bindgen(unchecked_param_type = "number")] created_at: JsValue,
+    lightning_address: Option<String>,
 ) -> Result<JsValue, JsValue> {
     let run = || -> Result<UnsignedSignatureEvent, JsError> {
         let created_at: u32 = serde_wasm_bindgen::from_value(created_at)
             .map_err(|error| JsError::created_at(&error))?;
-        let template =
-            signature::unsigned_signature_template(card_hash_hex, pubkey, u64::from(created_at))?;
+        let template = signature::unsigned_signature_template(
+            card_hash_hex,
+            pubkey,
+            u64::from(created_at),
+            lightning_address.as_deref(),
+        )?;
         Ok(UnsignedSignatureEvent {
             pubkey: template.pubkey.to_hex(),
             created_at: template.created_at.as_secs(),
@@ -128,21 +137,22 @@ pub fn signature_template(
     export(run())
 }
 
-/// Verifies a signed event JSON over a card and returns the signer's pubkey.
+/// Verifies a signed event JSON over a card and returns the signer: their
+/// pubkey, and for a version 2 card the payout address they signed.
 ///
 /// # Errors
 ///
 /// Throws `invalid_card_json`, `invalid_event_json` or the first failed
 /// signature check.
-#[wasm_bindgen]
-pub fn verify_signature(card_json: &str, event_json: &str) -> Result<String, JsValue> {
-    let run = || -> Result<String, JsError> {
+#[wasm_bindgen(unchecked_return_type = "Signer")]
+pub fn verify_signature(card_json: &str, event_json: &str) -> Result<JsValue, JsValue> {
+    let run = || -> Result<Signer, JsError> {
         let card = parse_card(card_json)?;
         let event =
             serde_json::from_str(event_json).map_err(|error| JsError::event_json(&error))?;
-        Ok(signature::verify_signature_event(&card, &event)?)
+        Ok(signature::verify_signature_event(&card, &event)?.into())
     };
-    run().map_err(throw)
+    export(run())
 }
 
 /// Computes a card's signing status from a JSON array of signed events.
@@ -171,13 +181,18 @@ pub fn card_status(card_json: &str, events_json: &str) -> Result<JsValue, JsValu
                 }
             })
             .collect();
+        let signers =
+            |signed: Vec<signature::Signer>| signed.into_iter().map(Signer::from).collect();
         Ok(match report.status {
             status::CardStatus::Draft { signed, missing } => CardStatus::Draft {
-                signed,
+                signed: signers(signed),
                 missing,
                 rejected,
             },
-            status::CardStatus::Active { signed } => CardStatus::Active { signed, rejected },
+            status::CardStatus::Active { signed } => CardStatus::Active {
+                signed: signers(signed),
+                rejected,
+            },
         })
     };
     export(run())
@@ -222,15 +237,30 @@ struct UnsignedSignatureEvent {
 }
 
 #[derive(Serialize)]
+struct Signer {
+    pubkey: String,
+    lightning_address: Option<String>,
+}
+
+impl From<signature::Signer> for Signer {
+    fn from(signer: signature::Signer) -> Self {
+        Self {
+            pubkey: signer.pubkey,
+            lightning_address: signer.lightning_address,
+        }
+    }
+}
+
+#[derive(Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 enum CardStatus {
     Draft {
-        signed: Vec<String>,
+        signed: Vec<Signer>,
         missing: Vec<String>,
         rejected: Vec<RejectedEvent>,
     },
     Active {
-        signed: Vec<String>,
+        signed: Vec<Signer>,
         rejected: Vec<RejectedEvent>,
     },
 }
@@ -243,7 +273,7 @@ struct RejectedEvent {
 }
 
 fn parse_card(card_json: &str) -> Result<Card, JsError> {
-    serde_json::from_str(card_json).map_err(|error| JsError::card_json(&error))
+    Card::from_json(card_json).map_err(|error| JsError::card_json(&error))
 }
 
 /// Accepts only canonical decimal integers: digits, no leading zeros, fits in `u64`.
@@ -301,8 +331,10 @@ mod tests {
         for code in ERROR_CODES {
             assert!(seen.insert(code), "duplicate code {code}");
             assert!(
-                code.bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
+                code.starts_with(|c: char| c.is_ascii_lowercase())
+                    && code.bytes().all(|byte| {
+                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                    }),
                 "{code} is not snake_case"
             );
         }

@@ -2,7 +2,7 @@
 
 #![deny(clippy::float_arithmetic)]
 
-/// Card schema types will live here.
+/// Card schema types, versions 1 and 2.
 pub mod card;
 /// Shared error types will live here.
 pub mod error;
@@ -21,3 +21,5 @@ pub mod validate;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_v2;

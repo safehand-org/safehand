@@ -24,7 +24,7 @@ use nostr::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use splitcard_core::{
-    card::{Card, Member, Payout, Rules},
+    card::{Card, CardV1, Member, Payout, Rules},
     signature::unsigned_signature_template,
 };
 use splitcard_server::{AppState, Clock, config::Config, db, router};
@@ -377,8 +377,8 @@ impl TestApp {
 
 /// A signature event over `hash` by `signer`, as JSON.
 pub fn signature(signer: u8, hash: &str, created_at: u64) -> String {
-    let unsigned =
-        unsigned_signature_template(hash, &pubkey(signer), created_at).expect("valid template");
+    let unsigned = unsigned_signature_template(hash, &pubkey(signer), created_at, None)
+        .expect("valid template");
     unsigned
         .finalize(&keys(signer))
         .expect("signing succeeds")
@@ -388,7 +388,7 @@ pub fn signature(signer: u8, hash: &str, created_at: u64) -> String {
 /// A card for `members` (person number, weight) with this test event label
 /// and team.
 pub fn card(members: &[(u8, u64)], supersedes: Option<&str>) -> Card {
-    Card {
+    Card::V1(CardV1 {
         version: 1,
         card_id: "llamas-split".to_owned(),
         event: EVENT_LABEL.to_owned(),
@@ -409,6 +409,14 @@ pub fn card(members: &[(u8, u64)], supersedes: Option<&str>) -> Card {
             .collect(),
         rules: Rules { peer_review: None },
         supersedes: supersedes.map(str::to_owned),
+    })
+}
+
+/// The version 1 card inside `card`, for tests that change one field.
+pub fn v1(card: &mut Card) -> &mut CardV1 {
+    match card {
+        Card::V1(card) => card,
+        Card::V2(_) => panic!("expected a version 1 card"),
     }
 }
 

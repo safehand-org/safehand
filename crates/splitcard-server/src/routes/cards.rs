@@ -1,7 +1,5 @@
 //! Submitting cards, collecting signatures and activating cards.
 
-use std::collections::BTreeSet;
-
 use axum::{
     Json,
     extract::{Path, Request, State},
@@ -14,7 +12,7 @@ use nostr::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use splitcard_core::{
-    card::Card,
+    card::{Card, CardV1, Payout},
     hash::{canonical_json, card_hash_hex},
     signature::{SIGNATURE_KIND, verify_signature_event},
     status::{CardStatus, card_status},
@@ -24,10 +22,10 @@ use splitcard_core::{
 use sqlx::{FromRow, SqliteConnection};
 
 use super::{
-    conflict, parse_json, parse_team_id,
+    conflict, parse_card, parse_json, parse_team_id,
     payouts::{discard_prize, refuse_if_prize_agreed},
     team_not_found,
-    teams::{load_participants, load_team, require_participant},
+    teams::{ParticipantRow, load_participants, load_team, require_participant},
     timestamps::{TimestampView, load_view},
     unprocessable,
 };
@@ -140,17 +138,17 @@ async fn loaded_card(conn: &mut SqliteConnection, row: CardRow) -> Result<Loaded
 /// members of a superseded card sign too; they count for `supersede`, not
 /// for this card's member status.
 fn signing_view(card: &Card, events: &[Event]) -> Result<SigningView, ApiError> {
-    let members: BTreeSet<&str> = card.members.iter().map(|m| m.pubkey.as_str()).collect();
     let member_events: Vec<Event> = events
         .iter()
-        .filter(|event| members.contains(event.pubkey.to_hex().as_str()))
+        .filter(|event| card.is_member(&event.pubkey.to_hex()))
         .cloned()
         .collect();
     let report = card_status(card, &member_events)?;
-    let (state, signed, missing) = match report.status {
+    let (state, signers, missing) = match report.status {
         CardStatus::Draft { signed, missing } => ("draft", signed, missing),
         CardStatus::Active { signed } => ("active", signed, Vec::new()),
     };
+    let signed = signers.into_iter().map(|signer| signer.pubkey).collect();
     let rejected = report
         .rejected
         .into_iter()
@@ -286,7 +284,7 @@ fn card_stale() -> ApiError {
 
 /// Parses JSON this server stored; failure means the database is corrupt.
 pub(crate) fn stored_card(json: &str) -> Result<Card, ApiError> {
-    serde_json::from_str(json).map_err(|error| ApiError::internal(&error))
+    Card::from_json(json).map_err(|error| ApiError::internal(&error))
 }
 
 async fn signature_jsons(
@@ -310,7 +308,7 @@ fn stored_events(jsons: &[String]) -> Result<Vec<Event>, ApiError> {
 
 /// The card this card supersedes, if any.
 async fn old_card(conn: &mut SqliteConnection, card: &Card) -> Result<Option<Card>, ApiError> {
-    let Some(old_hash) = &card.supersedes else {
+    let Some(old_hash) = card.supersedes() else {
         return Ok(None);
     };
     let row = load_card(conn, old_hash)
@@ -391,8 +389,15 @@ pub async fn submit(
     auth: Authenticated,
 ) -> Result<(StatusCode, Json<CardView>), ApiError> {
     let team_id = parse_team_id(&id)?;
-    let card: Card = parse_json(&auth.body, "invalid_card_json")?;
+    let card = parse_card(&auth.body)?;
     validate(&card)?;
+    let Card::V1(v1) = &card else {
+        return Err(unprocessable(
+            "unsupported_version",
+            "version 2 cards are not accepted yet",
+        )
+        .with_details(json!({ "version": card.version() })));
+    };
     let hash = card_hash_hex(&card)?;
     let canonical = canonical_json(&card)?;
 
@@ -401,13 +406,13 @@ pub async fn submit(
         .await?
         .ok_or_else(team_not_found)?;
     require_participant(&mut tx, team_id, &auth.pubkey).await?;
-    if card.event != team.event_label {
+    if card.event() != team.event_label {
         return Err(
             unprocessable("wrong_event", "card event is not this team's event label")
                 .with_details(json!({ "expected": team.event_label })),
         );
     }
-    if card.team != team.name {
+    if card.team() != team.name {
         return Err(
             unprocessable("wrong_team", "card team is not this team's name")
                 .with_details(json!({ "expected": team.name })),
@@ -418,35 +423,11 @@ pub async fn submit(
         return Ok((StatusCode::OK, Json(view)));
     }
     let participants = load_participants(&mut tx, team_id).await?;
-    for (index, member) in card.members.iter().enumerate() {
-        let details = json!({ "index": index, "pubkey": member.pubkey });
-        let Some(participant) = participants.iter().find(|p| p.pubkey == member.pubkey) else {
-            return Err(unprocessable(
-                "member_not_participant",
-                format!("member {index} has not joined this team"),
-            )
-            .with_details(details));
-        };
-        if member.name != participant.name {
-            return Err(unprocessable(
-                "member_name_mismatch",
-                format!("member {index} name differs from their profile"),
-            )
-            .with_details(details));
-        }
-        let splitcard_core::card::Payout::Lightning { address } = &member.payout;
-        if *address != participant.lightning_address {
-            return Err(unprocessable(
-                "member_address_mismatch",
-                format!("member {index} Lightning Address differs from their profile"),
-            )
-            .with_details(details));
-        }
-    }
-    if card.supersedes.is_some() {
+    check_v1_members(v1, &participants)?;
+    if card.supersedes().is_some() {
         refuse_if_prize_agreed(&mut tx, team_id).await?;
     }
-    match (&team.active_card_hash, &card.supersedes) {
+    match (team.active_card_hash.as_deref(), card.supersedes()) {
         (None, Some(_)) => {
             return Err(conflict(
                 "unexpected_supersedes",
@@ -476,7 +457,7 @@ pub async fn submit(
     .bind(&hash)
     .bind(team_id)
     .bind(&canonical)
-    .bind(&card.supersedes)
+    .bind(card.supersedes())
     .bind(&auth.pubkey)
     .bind(db_time(state.clock.now_unix()))
     .execute(&mut *tx)
@@ -487,6 +468,37 @@ pub async fn submit(
     let view = card_view(&mut tx, row).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// Version 1 members must be participants, named and paid as in their
+/// profiles when the card is submitted.
+fn check_v1_members(card: &CardV1, participants: &[ParticipantRow]) -> Result<(), ApiError> {
+    for (index, member) in card.members.iter().enumerate() {
+        let details = json!({ "index": index, "pubkey": member.pubkey });
+        let Some(participant) = participants.iter().find(|p| p.pubkey == member.pubkey) else {
+            return Err(unprocessable(
+                "member_not_participant",
+                format!("member {index} has not joined this team"),
+            )
+            .with_details(details));
+        };
+        if member.name != participant.name {
+            return Err(unprocessable(
+                "member_name_mismatch",
+                format!("member {index} name differs from their profile"),
+            )
+            .with_details(details));
+        }
+        let Payout::Lightning { address } = &member.payout;
+        if *address != participant.lightning_address {
+            return Err(unprocessable(
+                "member_address_mismatch",
+                format!("member {index} Lightning Address differs from their profile"),
+            )
+            .with_details(details));
+        }
+    }
+    Ok(())
 }
 
 /// `GET /cards/{hash}`: the canonical card JSON with its signing status.
@@ -572,7 +584,8 @@ pub async fn sign(
     let pubkey = match &old {
         None => verify_signature_event(&card, &event)?,
         Some(old) => verify_supersede_signature_event(old, &card, &event)?,
-    };
+    }
+    .pubkey;
 
     // Everything below re-reads state inside one write transaction, so
     // concurrent signatures are applied one at a time.
@@ -588,12 +601,12 @@ pub async fn sign(
         .ok_or_else(team_not_found)?;
     if is_stale(
         &row.status,
-        card.supersedes.as_deref(),
+        card.supersedes(),
         team.active_card_hash.as_deref(),
     ) {
         return Err(card_stale());
     }
-    if card.supersedes.is_some() {
+    if card.supersedes().is_some() {
         refuse_if_prize_agreed(&mut tx, row.team_id).await?;
     }
     let now = state.clock.now_unix();
@@ -639,7 +652,7 @@ async fn activate_if_ready(
         .await?
         .ok_or_else(team_not_found)?;
     // A draft written against an earlier active card can never activate.
-    if team.active_card_hash != card.supersedes {
+    if team.active_card_hash.as_deref() != card.supersedes() {
         return Ok(());
     }
     let signatures = signature_jsons(conn, &row.hash).await?;
@@ -662,7 +675,7 @@ async fn activate_if_ready(
     .bind(&row.hash)
     .execute(&mut *conn)
     .await?;
-    if let Some(old_hash) = &card.supersedes {
+    if let Some(old_hash) = card.supersedes() {
         // A prize proposed for the old card was never agreed (agreeing one
         // stops the card from being replaced), so it goes with that card.
         discard_prize(conn, row.team_id).await?;

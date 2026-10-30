@@ -39,8 +39,14 @@ fn call(function: &str, args: &[Value]) -> Result<Value, Value> {
         "validate_card" => validate_card(text(0)).map(|()| Value::Null),
         "compute_payouts" => compute_payouts(text(0), text(1)).map(from_js),
         "display_basis_points" => display_basis_points(text(0)).map(from_js),
-        "signature_template" => signature_template(text(0), text(1), to_js(&args[2])).map(from_js),
-        "verify_signature" => verify_signature(text(0), text(1)).map(Value::from),
+        "signature_template" => signature_template(
+            text(0),
+            text(1),
+            to_js(&args[2]),
+            args.get(3).and_then(Value::as_str).map(str::to_owned),
+        )
+        .map(from_js),
+        "verify_signature" => verify_signature(text(0), text(1)).map(from_js),
         "card_status" => card_status(text(0), text(1)).map(from_js),
         "check_supersede" => check_supersede(text(0), text(1), text(2)).map(|()| Value::Null),
         other => panic!("unknown fixture function {other}"),
@@ -158,7 +164,7 @@ fn created_at_must_be_a_whole_u32_number() {
     ];
     for bad in bad_values {
         let error = from_js(
-            signature_template(hash, pubkey, bad.clone())
+            signature_template(hash, pubkey, bad.clone(), None)
                 .err()
                 .unwrap_or_else(|| panic!("{bad:?} must be rejected")),
         );

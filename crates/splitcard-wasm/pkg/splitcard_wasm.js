@@ -264,21 +264,27 @@ export function sign_event(secret, unsigned_json, aux_rand) {
  * `window.nostr.signEvent`.
  *
  * `created_at` is Unix seconds as a whole JS number from 0 to 4294967295.
+ * Pass `lightning_address`, the signer's payout address, for a version 2
+ * card; leave it out for version 1. It becomes the event's `lud16` tag.
  *
  * # Errors
  *
- * Throws `invalid_created_at`, `invalid_card_hash` or `invalid_template_pubkey`.
+ * Throws `invalid_created_at`, `invalid_card_hash`, `invalid_template_pubkey`
+ * or `invalid_template_lightning_address`.
  * @param {string} card_hash_hex
  * @param {string} pubkey
  * @param {number} created_at
+ * @param {string | null} [lightning_address]
  * @returns {UnsignedSignatureEvent}
  */
-export function signature_template(card_hash_hex, pubkey, created_at) {
+export function signature_template(card_hash_hex, pubkey, created_at, lightning_address) {
     const ptr0 = passStringToWasm0(card_hash_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(pubkey, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.signature_template(ptr0, len0, ptr1, len1, created_at);
+    var ptr2 = isLikeNone(lightning_address) ? 0 : passStringToWasm0(lightning_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.signature_template(ptr0, len0, ptr1, len1, created_at, ptr2, len2);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -303,7 +309,8 @@ export function validate_card(card_json) {
 }
 
 /**
- * Verifies a signed event JSON over a card and returns the signer's pubkey.
+ * Verifies a signed event JSON over a card and returns the signer: their
+ * pubkey, and for a version 2 card the payout address they signed.
  *
  * # Errors
  *
@@ -311,29 +318,18 @@ export function validate_card(card_json) {
  * signature check.
  * @param {string} card_json
  * @param {string} event_json
- * @returns {string}
+ * @returns {Signer}
  */
 export function verify_signature(card_json, event_json) {
-    let deferred4_0;
-    let deferred4_1;
-    try {
-        const ptr0 = passStringToWasm0(card_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(event_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.verify_signature(ptr0, len0, ptr1, len1);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
-        if (ret[3]) {
-            ptr3 = 0; len3 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
-    } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    const ptr0 = passStringToWasm0(card_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(event_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.verify_signature(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
+    return takeFromExternrefTable0(ret[0]);
 }
 
 /**

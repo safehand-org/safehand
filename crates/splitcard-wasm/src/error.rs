@@ -36,8 +36,10 @@ pub const ERROR_CODES: &[&str] = &[
     "zero_weight",
     "weight_too_large",
     "invalid_lightning_address",
+    "invalid_member_label",
     "invalid_supersedes",
     "invalid_peer_review_max_shift_points",
+    "invalid_leave_keep_percent",
     // `SplitError`.
     "no_weights",
     "split_zero_weight",
@@ -49,6 +51,7 @@ pub const ERROR_CODES: &[&str] = &[
     // `SignatureTemplateError`.
     "invalid_card_hash",
     "invalid_template_pubkey",
+    "invalid_template_lightning_address",
     "tag_construction",
     // `SignatureError`.
     "invalid_event_id",
@@ -60,6 +63,10 @@ pub const ERROR_CODES: &[&str] = &[
     "missing_splitcard_tag",
     "multiple_splitcard_tags",
     "wrong_splitcard_tag_hash",
+    "missing_lud16_tag",
+    "multiple_lud16_tags",
+    "invalid_lud16",
+    "unexpected_lud16_tag",
     "non_member",
     // `SupersedeError`.
     "invalid_old_card",
@@ -183,10 +190,17 @@ impl From<ValidationError> for JsError {
             ValidationError::InvalidLightningAddress { index } => {
                 ("invalid_lightning_address", json!({ "index": index }))
             }
+            ValidationError::InvalidMemberLabel { index } => {
+                ("invalid_member_label", json!({ "index": index }))
+            }
             ValidationError::InvalidSupersedes => ("invalid_supersedes", Value::Null),
             ValidationError::InvalidPeerReviewMaxShiftPoints => {
                 ("invalid_peer_review_max_shift_points", Value::Null)
             }
+            ValidationError::InvalidLeaveKeepPercent { keep_percent } => (
+                "invalid_leave_keep_percent",
+                json!({ "keep_percent": keep_percent }),
+            ),
         };
         Self::new(code, &error, details)
     }
@@ -237,6 +251,7 @@ impl From<SignatureTemplateError> for JsError {
         let code = match &error {
             SignatureTemplateError::InvalidCardHash => "invalid_card_hash",
             SignatureTemplateError::InvalidPubkey => "invalid_template_pubkey",
+            SignatureTemplateError::InvalidLightningAddress => "invalid_template_lightning_address",
             SignatureTemplateError::TagConstruction => "tag_construction",
         };
         Self::new(code, &error, Value::Null)
@@ -256,6 +271,10 @@ impl From<SignatureError> for JsError {
             SignatureError::MissingSplitcardTag => "missing_splitcard_tag",
             SignatureError::MultipleSplitcardTags => "multiple_splitcard_tags",
             SignatureError::WrongSplitcardTagHash => "wrong_splitcard_tag_hash",
+            SignatureError::MissingLud16Tag => "missing_lud16_tag",
+            SignatureError::MultipleLud16Tags => "multiple_lud16_tags",
+            SignatureError::InvalidLud16 => "invalid_lud16",
+            SignatureError::UnexpectedLud16Tag => "unexpected_lud16_tag",
             SignatureError::NonMember => "non_member",
             SignatureError::CardHash(inner) => return inner.into(),
         };

@@ -8,7 +8,13 @@
 // `--target nodejs` build is needed. Exits non-zero on any mismatch.
 
 import { readFileSync } from "node:fs";
-import { initSync, compute_payouts, display_basis_points } from "../pkg/splitcard_wasm.js";
+import {
+  initSync,
+  compute_payouts,
+  display_basis_points,
+  signature_template,
+  card_hash,
+} from "../pkg/splitcard_wasm.js";
 
 const wasm = readFileSync(new URL("../pkg/splitcard_wasm_bg.wasm", import.meta.url));
 initSync({ module: wasm });
@@ -36,6 +42,15 @@ check("compute_payouts 100,001 sats at 36/35/29", compute_payouts(card, "100001"
   { pubkey: pk(3), amount_sats: "29000" },
 ]);
 check("display_basis_points", display_basis_points(card), [3600, 3500, 2900]);
+
+// A version 2 card: members by pubkey, payout addresses go in signatures.
+const v2 = `{"version":2,"card_id":"lagos/llamas","event":"Lagos","team":"Llamas","members":[{"pubkey":"${pk(1)}","weight":1,"label":"Ada"},{"pubkey":"${pk(2)}","weight":1},{"pubkey":"${pk(3)}","weight":1}],"rules":{"peer_review":null,"leave":{"kind":"keep_percent","keep_percent":15}},"supersedes":null}`;
+check("version 2 display_basis_points, equal split", display_basis_points(v2), [3334, 3333, 3333]);
+// The secp256k1 generator's x coordinate, a valid x-only public key.
+const g = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+const template = signature_template(card_hash(v2), g, 1700000000, "ada@example.com");
+check("version 2 template carries the lud16 tag", template.tags[2], ["lud16", "ada@example.com"]);
+check("version 1 template has no lud16 tag", signature_template(card_hash(card), g, 1700000000).tags.length, 2);
 
 try {
   compute_payouts(card, "1e3");
