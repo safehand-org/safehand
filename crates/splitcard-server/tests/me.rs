@@ -28,6 +28,7 @@ async fn before_a_profile_there_is_nothing() {
         json!({
             "pubkey": pubkey(DAYO),
             "profile": null,
+            "pending_cards": [],
             "teams": [],
             "needs_signature": null,
             "summary": { "received_sats": "0", "paid_team_count": 0 },

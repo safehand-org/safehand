@@ -3,7 +3,7 @@
 use std::{process::ExitCode, sync::Arc, time::Duration};
 
 use splitcard_server::{
-    AppState, Clock, SystemClock,
+    AddressCheck, AppState, Clock, LnurlAddressCheck, SkipAddressCheck, SystemClock,
     config::Config,
     db,
     ots::{
@@ -67,6 +67,18 @@ async fn termination_signal() {
     }
 }
 
+/// Variable that, set to `1`, skips the payout address lookup. Refused
+/// unless `SPLITCARD_DEV` is set, so production always checks.
+const SKIP_ADDRESS_CHECK: &str = "SPLITCARD_SKIP_ADDRESS_CHECK";
+
+fn skip_address_check(config: &Config) -> Result<bool, String> {
+    let skip = std::env::var(SKIP_ADDRESS_CHECK).is_ok_and(|value| value.trim() == "1");
+    if skip && !config.development {
+        return Err(format!("{SKIP_ADDRESS_CHECK} needs SPLITCARD_DEV=1"));
+    }
+    Ok(skip)
+}
+
 async fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let pool = db::connect(&config.database_url).await?;
     let publisher = NostrRelayPublisher::connect(&config.relays).await?;
@@ -101,10 +113,17 @@ async fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let server_pubkey = config.server_keys.public_key().to_hex();
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
     let bind_addr = listener.local_addr()?;
+    let addresses: Arc<dyn AddressCheck> = if skip_address_check(&config)? {
+        tracing::warn!("SPLITCARD_SKIP_ADDRESS_CHECK is set: payout addresses are not looked up");
+        Arc::new(SkipAddressCheck)
+    } else {
+        Arc::new(LnurlAddressCheck::new()?)
+    };
     let state = AppState {
         db: pool.clone(),
         config: Arc::new(config),
         clock,
+        addresses,
     };
     tracing::info!(%bind_addr, %server_pubkey, "Split Card server listening");
 

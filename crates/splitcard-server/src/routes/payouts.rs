@@ -28,7 +28,7 @@ use splitcard_ln::{
 use sqlx::{FromRow, SqliteConnection};
 
 use super::{
-    cards::{load_card, stored_card},
+    cards::{load_card, member_display_names, signature_jsons, stored_card, stored_events},
     conflict, forbidden, is_unique_violation, parse_json, parse_team_id, team_not_found,
     teams::{load_team, require_participant},
     unprocessable,
@@ -402,8 +402,9 @@ pub async fn put_prize(
         return Err(not_a_card_member());
     }
     let amounts = compute_payouts(&card, prize_sats)?;
-    let addresses = payout_addresses(&card, &[])?;
-    let names = card.member_names();
+    let events = stored_events(&signature_jsons(&mut tx, &card_hash).await?)?;
+    let addresses = payout_addresses(&card, &events)?;
+    let names = member_display_names(&mut tx, &card).await?;
 
     let existing = load_payout(&mut tx, team_id).await?;
     if let Some(existing) = &existing
@@ -442,7 +443,7 @@ pub async fn put_prize(
             .bind(team_id)
             .bind(i64::try_from(index).map_err(|error| ApiError::internal(&error))?)
             .bind(pubkey)
-            .bind(name.unwrap_or_default())
+            .bind(name.as_deref().unwrap_or_default())
             .bind(address)
             .bind(db_sats(*amount)?)
             .execute(&mut *tx)

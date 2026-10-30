@@ -6,7 +6,7 @@ use splitcard_core::{card::Card, split::display_basis_points};
 use sqlx::SqliteConnection;
 
 use super::{
-    cards::{LoadedCard, TeamCards, team_cards},
+    cards::{LoadedCard, TeamCards, load_card, stored_card, team_cards},
     payouts::{PayoutState, load_payout, phase},
     profiles::{ProfileView, load_profile},
     teams::{TeamRow, load_participants, load_team},
@@ -34,6 +34,10 @@ pub struct MeView {
     pub teams: Vec<TeamSummary>,
     /// The newest card waiting for the caller's signature, if any.
     pub needs_signature: Option<NeedsSignature>,
+    /// Every draft listing the caller that they have not signed or declined
+    /// and that can still activate, newest first. Includes teams the caller
+    /// has not joined: a version 2 card lists members by key alone.
+    pub pending_cards: Vec<PendingCard>,
     /// Totals over the caller's teams.
     pub summary: Summary,
 }
@@ -83,6 +87,72 @@ pub struct TeamSummary {
     /// card submitted, signed or activated, a prize proposed or agreed, or a
     /// member paid.
     pub updated_at: i64,
+}
+
+/// A draft that lists the caller and waits for their signature.
+#[derive(Debug, Serialize)]
+pub struct PendingCard {
+    /// Team id, as a string.
+    pub team_id: String,
+    /// Team slug.
+    pub slug: String,
+    /// Team name.
+    pub name: String,
+    /// The card to sign.
+    pub card_hash: String,
+    /// Profile name of the member who created the card.
+    pub creator_name: String,
+    /// The caller's share in basis points, from `display_basis_points`.
+    pub share_basis_points: u32,
+    /// Unix seconds the card was created.
+    pub created_at: i64,
+}
+
+/// Drafts listing `pubkey` that it has not signed or declined, and that no
+/// one declined and can still activate, newest first.
+async fn pending_cards(
+    conn: &mut SqliteConnection,
+    pubkey: &str,
+) -> Result<Vec<PendingCard>, ApiError> {
+    let hashes: Vec<String> = sqlx::query_scalar(
+        "SELECT cards.hash FROM card_members \
+         JOIN cards ON cards.hash = card_members.card_hash \
+         JOIN teams ON teams.id = cards.team_id \
+         WHERE card_members.pubkey = ? AND cards.status = 'draft' \
+         AND cards.supersedes IS teams.active_card_hash \
+         AND NOT EXISTS (SELECT 1 FROM card_signatures s \
+             WHERE s.card_hash = cards.hash AND s.pubkey = card_members.pubkey) \
+         AND NOT EXISTS (SELECT 1 FROM card_declines d WHERE d.card_hash = cards.hash) \
+         ORDER BY cards.created_at DESC, cards.rowid DESC",
+    )
+    .bind(pubkey)
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut pending = Vec::with_capacity(hashes.len());
+    for hash in hashes {
+        let row = load_card(conn, &hash)
+            .await?
+            .ok_or_else(|| ApiError::internal(&"indexed card is missing"))?;
+        let card = stored_card(&row.canonical_json)?;
+        let team = load_team(conn, row.team_id)
+            .await?
+            .ok_or_else(|| ApiError::internal(&"card of a missing team"))?;
+        let creator = load_profile(conn, &row.created_by)
+            .await?
+            .ok_or_else(|| ApiError::internal(&"card submitter has no profile"))?;
+        let share = share_basis_points(&card, pubkey)?
+            .ok_or_else(|| ApiError::internal(&"indexed member is not on the card"))?;
+        pending.push(PendingCard {
+            team_id: team.id.to_string(),
+            slug: team.slug,
+            name: team.name,
+            card_hash: row.hash,
+            creator_name: creator.name,
+            share_basis_points: share,
+            created_at: row.created_at,
+        });
+    }
+    Ok(pending)
 }
 
 /// A card waiting for the caller's signature.
@@ -271,11 +341,13 @@ pub async fn get(
     // Newest first; the sort is stable, so ties keep join order.
     teams.sort_by_key(|team| std::cmp::Reverse(team.updated_at));
     let needs_signature = asks.into_iter().max_by_key(|ask| ask.invited_at);
+    let pending_cards = pending_cards(&mut conn, &auth.pubkey).await?;
     Ok(Json(MeView {
         pubkey: auth.pubkey,
         profile,
         teams,
         needs_signature,
+        pending_cards,
         summary: Summary {
             received_sats: received_sats.to_string(),
             paid_team_count,

@@ -29,14 +29,20 @@ pub mod shutdown;
 pub mod slug;
 
 use std::{
+    future::Future,
+    pin::Pin,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
     Router,
     response::IntoResponse,
     routing::{get, post, put},
+};
+use splitcard_ln::{
+    address::parse_address,
+    client::{ClientConfig, ClientError, LnClient},
 };
 use sqlx::SqlitePool;
 use tower_http::trace::TraceLayer;
@@ -64,6 +70,66 @@ impl Clock for SystemClock {
     }
 }
 
+/// The future an [`AddressCheck`] returns.
+pub type AddressCheckFuture<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
+
+/// Checks that a Lightning Address answers, before a member signs it as
+/// their payout address, so a typo is caught before money is involved.
+pub trait AddressCheck: Send + Sync + 'static {
+    /// `Ok` if `address` serves an LNURL-pay request; `Err` holds the
+    /// provider's reason.
+    fn check<'a>(&'a self, address: &'a str) -> AddressCheckFuture<'a>;
+}
+
+/// Most time an address check may take.
+pub const ADDRESS_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Fetches the address's LNURL-pay request with `splitcard-ln`, under its
+/// HTTPS and public-address rules.
+#[derive(Debug, Clone)]
+pub struct LnurlAddressCheck {
+    client: LnClient,
+}
+
+impl LnurlAddressCheck {
+    /// A checker that gives up after [`ADDRESS_CHECK_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::Build`] if the HTTP client cannot be built.
+    pub fn new() -> Result<Self, ClientError> {
+        let client = LnClient::new(ClientConfig {
+            timeout: ADDRESS_CHECK_TIMEOUT,
+            ..ClientConfig::default()
+        })?;
+        Ok(Self { client })
+    }
+}
+
+impl AddressCheck for LnurlAddressCheck {
+    fn check<'a>(&'a self, address: &'a str) -> AddressCheckFuture<'a> {
+        Box::pin(async move {
+            let address = parse_address(address).map_err(|error| error.to_string())?;
+            self.client
+                .fetch_pay_request(&address)
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })
+    }
+}
+
+/// Accepts every address without a lookup. Only for local development with
+/// made-up addresses; `main` allows it only with `SPLITCARD_DEV=1`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SkipAddressCheck;
+
+impl AddressCheck for SkipAddressCheck {
+    fn check<'a>(&'a self, _address: &'a str) -> AddressCheckFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
 /// Shared handler state. It holds the server key, so it is not `Debug`.
 #[derive(Clone)]
 pub struct AppState {
@@ -73,6 +139,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     /// The time source.
     pub clock: Arc<dyn Clock>,
+    /// Checks payout addresses before version 2 signatures are accepted.
+    pub addresses: Arc<dyn AddressCheck>,
 }
 
 /// Installs `ring` as the process-wide rustls provider, for relay websockets.
@@ -111,6 +179,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/cards/{hash}", get(routes::cards::get))
         .route("/cards/{hash}/signatures", post(routes::cards::sign))
+        .route("/cards/{hash}/decline", post(routes::cards::decline))
         .route("/cards/{hash}/timestamp", get(routes::timestamps::status))
         .route(
             "/cards/{hash}/timestamp.ots",

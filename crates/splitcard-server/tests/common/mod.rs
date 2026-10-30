@@ -24,10 +24,12 @@ use nostr::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use splitcard_core::{
-    card::{Card, CardV1, Member, Payout, Rules},
+    card::{Card, CardV1, CardV2, LeaveRule, Member, MemberV2, Payout, Rules, RulesV2},
     signature::unsigned_signature_template,
 };
-use splitcard_server::{AppState, Clock, config::Config, db, router};
+use splitcard_server::{
+    AddressCheck, AddressCheckFuture, AppState, Clock, config::Config, db, router,
+};
 use tower::ServiceExt;
 
 pub const NOW: u64 = 1_780_000_000;
@@ -60,6 +62,23 @@ impl ManualClock {
 impl Clock for ManualClock {
     fn now_unix(&self) -> u64 {
         self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// A fake LNURL source: an address whose user starts with `unreachable` has
+/// no pay request; every other address answers.
+#[derive(Debug, Default)]
+pub struct FakeAddresses;
+
+impl AddressCheck for FakeAddresses {
+    fn check<'a>(&'a self, address: &'a str) -> AddressCheckFuture<'a> {
+        Box::pin(async move {
+            if address.starts_with("unreachable") {
+                Err("HTTP 404: no such user".to_owned())
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 
@@ -126,6 +145,7 @@ pub fn app_with(db: sqlx::SqlitePool, config: Config) -> TestApp {
         db,
         config: Arc::new(config),
         clock: clock.clone(),
+        addresses: Arc::new(FakeAddresses),
     };
     TestApp {
         router: router(state.clone()),
@@ -418,6 +438,40 @@ pub fn v1(card: &mut Card) -> &mut CardV1 {
         Card::V1(card) => card,
         Card::V2(_) => panic!("expected a version 1 card"),
     }
+}
+
+/// A version 2 card for `members` (person number, weight), labelled only
+/// for the first member, with this test event label and team.
+pub fn v2_card(members: &[(u8, u64)], supersedes: Option<&str>) -> Card {
+    Card::V2(CardV2 {
+        version: 2,
+        card_id: "llamas-split-v2".to_owned(),
+        event: EVENT_LABEL.to_owned(),
+        team: TEAM_NAME.to_owned(),
+        members: members
+            .iter()
+            .enumerate()
+            .map(|(index, &(number, weight))| MemberV2 {
+                pubkey: pubkey(number),
+                weight,
+                label: (index == 0).then(|| person(number).0.to_owned()),
+            })
+            .collect(),
+        rules: RulesV2 {
+            peer_review: None,
+            leave: LeaveRule::KeepPercent { keep_percent: 15 },
+        },
+        supersedes: supersedes.map(str::to_owned),
+    })
+}
+
+/// A version 2 signature over `hash` by `signer`, paying `address`.
+pub fn v2_signature(signer: u8, hash: &str, created_at: u64, address: Option<&str>) -> String {
+    unsigned_signature_template(hash, &pubkey(signer), created_at, address)
+        .expect("valid template")
+        .finalize(&keys(signer))
+        .expect("signing succeeds")
+        .as_json()
 }
 
 /// Alice 36, Bob 35, Chidi 29.

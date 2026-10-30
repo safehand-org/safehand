@@ -31,6 +31,7 @@ pub(crate) fn parse_json<T: DeserializeOwned>(
     code: &'static str,
 ) -> Result<T, ApiError> {
     reject_wallet_secrets(body)?;
+    reject_secret_keys(body)?;
     serde_json::from_slice(body).map_err(|error| ApiError::invalid_json(code, &error))
 }
 
@@ -38,6 +39,7 @@ pub(crate) fn parse_json<T: DeserializeOwned>(
 /// `invalid_card_json`. Wallet secrets are refused first, as in [`parse_json`].
 pub(crate) fn parse_card(body: &[u8]) -> Result<Card, ApiError> {
     reject_wallet_secrets(body)?;
+    reject_secret_keys(body)?;
     let text = std::str::from_utf8(body).map_err(|error| {
         ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -63,7 +65,7 @@ pub(crate) fn reject_wallet_secrets(body: &[u8]) -> Result<(), ApiError> {
     let raw = String::from_utf8_lossy(body);
     let mut found = has_wallet_connect_uri(&raw);
     if !found && let Ok(value) = serde_json::from_slice::<Value>(body) {
-        found = json_has_wallet_connect_uri(&value);
+        found = json_has(&value, has_wallet_connect_uri);
     }
     if found {
         return Err(ApiError::new(
@@ -83,13 +85,51 @@ fn has_wallet_connect_uri(text: &str) -> bool {
         .any(|scheme| lower.contains(scheme))
 }
 
-fn json_has_wallet_connect_uri(value: &Value) -> bool {
+/// Refuses a body containing anything that looks like a Nostr secret key
+/// (`nsec1` and 58 bech32 characters, in either case) with
+/// `secret_key_rejected` (400).
+///
+/// Secret keys stay in the browser: no endpoint takes one, and the error
+/// never echoes it. As with wallet secrets, the raw bytes are checked and
+/// every JSON string and key after unescaping.
+pub(crate) fn reject_secret_keys(body: &[u8]) -> Result<(), ApiError> {
+    let raw = String::from_utf8_lossy(body);
+    let mut found = has_nsec(&raw);
+    if !found && let Ok(value) = serde_json::from_slice::<Value>(body) {
+        found = json_has(&value, has_nsec);
+    }
+    if found {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "secret_key_rejected",
+            "request bodies must never contain a Nostr secret key; \
+             secret keys never leave your device",
+        ));
+    }
+    Ok(())
+}
+
+/// Characters of a bech32 data part.
+const BECH32_CHARSET: &[u8] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+/// Whether `text` holds `nsec1` followed by the 58 data characters of an
+/// encoded 32-byte key.
+fn has_nsec(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    lower.match_indices("nsec1").any(|(start, prefix)| {
+        let data = &bytes[start + prefix.len()..];
+        data.len() >= 58 && data[..58].iter().all(|byte| BECH32_CHARSET.contains(byte))
+    })
+}
+
+fn json_has(value: &Value, matches: fn(&str) -> bool) -> bool {
     match value {
-        Value::String(text) => has_wallet_connect_uri(text),
-        Value::Array(items) => items.iter().any(json_has_wallet_connect_uri),
+        Value::String(text) => matches(text),
+        Value::Array(items) => items.iter().any(|item| json_has(item, matches)),
         Value::Object(fields) => fields
             .iter()
-            .any(|(key, value)| has_wallet_connect_uri(key) || json_has_wallet_connect_uri(value)),
+            .any(|(key, value)| matches(key) || json_has(value, matches)),
         Value::Null | Value::Bool(_) | Value::Number(_) => false,
     }
 }

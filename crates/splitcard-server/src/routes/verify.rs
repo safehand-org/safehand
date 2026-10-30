@@ -556,7 +556,7 @@ fn card_valid(evidence: &Evidence) -> CheckReport {
 
 /// Verifies each stored signature event against the card, or for a
 /// superseding card against the old and new cards. `Ok` holds the signer.
-fn verify_events(evidence: &Evidence) -> Vec<Result<String, Value>> {
+fn verify_events(evidence: &Evidence) -> Vec<Result<Signer, Value>> {
     let this = &evidence.this;
     let old = this
         .card
@@ -577,13 +577,12 @@ fn verify_events(evidence: &Evidence) -> Vec<Result<String, Value>> {
                 (true, Some(old)) => verify_supersede_signature_event(old, card, event),
                 _ => verify_signature_event(card, event),
             }
-            .map_err(error_json)?
-            .pubkey;
-            if signer != row.pubkey {
+            .map_err(error_json)?;
+            if signer.pubkey != row.pubkey {
                 return Err(json!({
                     "code": "stored_signer_mismatch",
                     "message": "the event's signer is not the stored signer",
-                    "details": { "stored": row.pubkey, "event": signer },
+                    "details": { "stored": row.pubkey, "event": signer.pubkey },
                 }));
             }
             Ok(signer)
@@ -591,19 +590,31 @@ fn verify_events(evidence: &Evidence) -> Vec<Result<String, Value>> {
         .collect()
 }
 
-fn signatures_valid(evidence: &Evidence, results: &[Result<String, Value>]) -> CheckReport {
+fn signatures_valid(evidence: &Evidence, results: &[Result<Signer, Value>]) -> CheckReport {
+    // Version 2 signatures carry the payout address; version 1 reports keep
+    // their exact shape.
+    let version_2 = matches!(evidence.this.card, Ok(Card::V2(_)));
     let events: Vec<Value> = evidence
         .this
         .signatures
         .iter()
         .zip(results)
         .map(|((row, event), result)| {
-            json!({
+            let mut entry = json!({
                 "event_id": event.as_ref().ok().map(|event| event.id.to_hex()),
                 "pubkey": row.pubkey,
                 "result": if result.is_ok() { check_result::PASS } else { check_result::FAIL },
                 "error": result.as_ref().err(),
-            })
+            });
+            if version_2 {
+                entry["lightning_address"] = json!(
+                    result
+                        .as_ref()
+                        .ok()
+                        .and_then(|signer| signer.lightning_address.clone())
+                );
+            }
+            entry
         })
         .collect();
     let pass = results.iter().all(Result::is_ok);
@@ -1098,7 +1109,13 @@ fn build_report(state: &AppState, evidence: &Evidence) -> VerificationReport {
         status,
         overall,
         checks,
-        signatures: signature_reports(evidence, signature_results),
+        signatures: signature_reports(
+            evidence,
+            signature_results
+                .into_iter()
+                .map(|result| result.map(|signer| signer.pubkey))
+                .collect(),
+        ),
         supersede_chain: SupersedeChain {
             previous: evidence.this.supersedes().map(str::to_owned),
             next,

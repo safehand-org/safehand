@@ -60,12 +60,13 @@ pub(crate) struct TeamRow {
     pub(crate) created_at: i64,
 }
 
-/// A participant with their profile's current name and Lightning Address.
+/// A participant with their profile's current name and Lightning Address,
+/// which a version 2 card's signer may not have set.
 #[derive(Debug, Clone, FromRow)]
 pub(crate) struct ParticipantRow {
     pub(crate) pubkey: String,
     pub(crate) name: String,
-    pub(crate) lightning_address: String,
+    pub(crate) lightning_address: Option<String>,
     pub(crate) joined_at: i64,
 }
 
@@ -103,6 +104,9 @@ pub struct TeamView {
     pub submission_url: Option<String>,
     /// Hash of the active card, if any.
     pub active_card_hash: Option<String>,
+    /// Hash of the newest draft written against the active card (or, without
+    /// one, the newest first card), declined or not, if any.
+    pub draft_card_hash: Option<String>,
     /// Unix seconds.
     pub created_at: i64,
     /// Participants in join order.
@@ -160,6 +164,14 @@ async fn team_view(
     viewer: Option<&str>,
 ) -> Result<TeamView, sqlx::Error> {
     let participants = load_participants(conn, team.id).await?;
+    let draft_card_hash = sqlx::query_scalar(
+        "SELECT hash FROM cards WHERE team_id = ? AND status = 'draft' AND supersedes IS ? \
+         ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    )
+    .bind(team.id)
+    .bind(&team.active_card_hash)
+    .fetch_optional(&mut *conn)
+    .await?;
     let is_participant =
         viewer.is_some_and(|viewer| participants.iter().any(|p| p.pubkey == viewer));
     Ok(TeamView {
@@ -170,13 +182,14 @@ async fn team_view(
         join_code: is_participant.then_some(team.join_code),
         submission_url: team.submission_url,
         active_card_hash: team.active_card_hash,
+        draft_card_hash,
         created_at: team.created_at,
         participants: participants
             .into_iter()
             .map(|participant| Participant {
                 pubkey: participant.pubkey,
                 name: participant.name,
-                lightning_address: is_participant.then_some(participant.lightning_address),
+                lightning_address: participant.lightning_address.filter(|_| is_participant),
                 joined_at: participant.joined_at,
             })
             .collect(),
