@@ -3,6 +3,8 @@
 **/node_modules/
 **/.next/
 **/pkg/
+# The committed browser WebAssembly package (deploy/app.Dockerfile uses it).
+!crates/splitcard-wasm/pkg/
 .git/
 # Secrets and local data must never reach an image.
 **/.env*

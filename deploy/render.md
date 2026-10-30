@@ -21,6 +21,35 @@ a Render disk.
 Lightning Address (LNURL) endpoints are not available yet. The proxy paths
 for them are in place, and the two LNURL smoke steps report SKIP.
 
+## Single service (alternative)
+
+`app.Dockerfile` builds one image that runs both the website and the API.
+Use it to deploy with a single Render web service instead of the Blueprint.
+Inside the container, the server listens on `127.0.0.1:4000` only, and the
+website on `PORT` proxies to it, so only the website is reachable from
+outside. The server runs as its own user, and the website runs as `node`. If
+either process exits, the container stops and Render restarts it.
+
+In the Render dashboard, create a **New → Web Service** from the
+`safehand-org/safehand` repository, branch `main`, with:
+
+- **Language**: Docker. An existing Node service can't be switched to
+  Docker, so create a new one and delete the old one afterwards.
+- **Dockerfile Path**: `./deploy/app.Dockerfile`, **Docker Build Context
+  Directory**: `.`
+- **Health Check Path**: `/api/health`
+- **Disk**: mount path `/var/data`, 1 GB. Disks need a paid instance type.
+- **Environment**:
+  - `PUBLIC_BASE_URL`: `https://<service>.onrender.com/api`, or
+    `https://yourdomain/api` once the domain points at this service.
+  - `SERVER_SECRET_KEY`: the key from step 1.
+  - `RELAYS`: `wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net`
+  - `LITESTREAM_*`: optional, see step 4.
+  - Don't set `SERVER_INTERNAL_URL`, `PORT` or `SPLITCARD_DEV`.
+
+Steps 1 and 3 to 6 below apply to this service in the same way, with this
+service in place of splitcard-web and splitcard-server.
+
 ## 1. Generate the production server key
 
 The server signs card events with its own Nostr key. Generate one on your
