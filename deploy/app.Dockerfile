@@ -51,7 +51,10 @@ FROM node:24.22.2-bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --user-group --home-dir /nonexistent --shell /usr/sbin/nologin splitcard
+    && useradd --system --uid 10001 --user-group --home-dir /nonexistent --shell /usr/sbin/nologin splitcard \
+    # Free instances have no disk: the database then lives in the container
+    # and is lost on every restart, unless Litestream restores it.
+    && install -d -o splitcard -g splitcard /var/data
 WORKDIR /app
 COPY --from=web --chown=node:node /app/.next/standalone ./
 COPY --from=web --chown=node:node /app/.next/static .next/static

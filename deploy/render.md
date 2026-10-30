@@ -39,6 +39,7 @@ In the Render dashboard, create a **New → Web Service** from the
   Directory**: `.`
 - **Health Check Path**: `/api/health`
 - **Disk**: mount path `/var/data`, 1 GB. Disks need a paid instance type.
+  On the free instance type, leave it out (see below).
 - **Environment**:
   - `PUBLIC_BASE_URL`: `https://<service>.onrender.com/api`, or
     `https://yourdomain/api` once the domain points at this service.
@@ -46,6 +47,14 @@ In the Render dashboard, create a **New → Web Service** from the
   - `RELAYS`: `wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net`
   - `LITESTREAM_*`: optional, see step 4.
   - Don't set `SERVER_INTERNAL_URL`, `PORT` or `SPLITCARD_DEV`.
+
+On the **free instance type** there is no disk, so the database lives in
+the container and is wiped whenever the service restarts, redeploys or
+spins down after 15 minutes without traffic. Set up Litestream (step 4)
+to keep the data: each start with no database restores it from R2, then
+every change is streamed back. The first visit after a spin-down waits
+while the service starts and restores. Without Litestream, use the free
+type only for a demo whose data you can lose.
 
 Steps 1 and 3 to 6 below apply to this service in the same way, with this
 service in place of splitcard-web and splitcard-server.
