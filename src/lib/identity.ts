@@ -85,3 +85,4 @@ export async function backupKey(identity: Identity): Promise<string> {
   const wasm = await loadWasm();
   return wasm.secret_key_nsec(identity.secret);
 }
+

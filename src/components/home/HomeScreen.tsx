@@ -1,17 +1,39 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { DashedNote } from "@/components/join/JoinLayout";
 import { homeDataFrom } from "@/lib/account";
+import { currentNpub } from "@/lib/signer";
 import { useMe } from "@/lib/useMe";
 import { HomeHeader } from "./HomeHeader";
 import { HomeView } from "./HomeView";
 
+function useOwnNpub(serverPubkey: string | undefined) {
+  const [loaded, setLoaded] = useState<{ pubkey: string; npub: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!serverPubkey) return;
+    let cancelled = false;
+    void currentNpub(serverPubkey).then((value) => {
+      if (!cancelled) setLoaded({ pubkey: serverPubkey, npub: value });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverPubkey]);
+
+  if (!serverPubkey) return null;
+  return loaded?.pubkey === serverPubkey ? loaded.npub : null;
+}
+
 /** Home for the signed-in member, from `GET /me`. */
 export function HomeScreen() {
   const account = useMe();
+  const serverPubkey = account.status === "ready" ? account.me.pubkey : undefined;
+  const npub = useOwnNpub(serverPubkey);
 
   if (account.status === "ready") {
-    return <HomeView data={homeDataFrom(account.me)} />;
+    return <HomeView data={homeDataFrom(account.me)} npub={npub} />;
   }
 
   // The sheet, without a name, while loading or after an error.

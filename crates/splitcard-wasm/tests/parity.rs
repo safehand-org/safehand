@@ -10,7 +10,8 @@ use serde_json::{Value, json};
 use serde_wasm_bindgen::Serializer;
 use splitcard_wasm::{
     card_hash, card_status, check_supersede, compute_payouts, display_basis_points,
-    error::ERROR_CODES, new_card, signature_template, validate_card, verify_signature,
+    error::ERROR_CODES, keys::npub_encode, new_card, signature_template, validate_card,
+    verify_signature,
 };
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::wasm_bindgen_test;
@@ -49,6 +50,7 @@ fn call(function: &str, args: &[Value]) -> Result<Value, Value> {
         "verify_signature" => verify_signature(text(0), text(1)).map(from_js),
         "card_status" => card_status(text(0), text(1)).map(from_js),
         "check_supersede" => check_supersede(text(0), text(1), text(2)).map(|()| Value::Null),
+        "npub_encode" => npub_encode(text(0)).map(Value::from),
         other => panic!("unknown fixture function {other}"),
     };
     result.map_err(from_js)

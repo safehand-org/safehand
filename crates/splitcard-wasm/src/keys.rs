@@ -108,14 +108,15 @@ pub(crate) fn public_key_hex(input: &str) -> Result<String, JsError> {
 /// Throws `invalid_public_key`.
 #[wasm_bindgen]
 pub fn npub_encode(pubkey: &str) -> Result<String, JsValue> {
-    let run = || -> Result<String, JsError> {
-        PublicKey::from_hex(pubkey)
-            .ok()
-            .filter(|key| key.xonly().is_ok())
-            .and_then(|key| key.to_bech32().ok())
-            .ok_or_else(JsError::public_key)
-    };
-    run().map_err(throw)
+    encode_npub(pubkey).map_err(throw)
+}
+
+fn encode_npub(pubkey: &str) -> Result<String, JsError> {
+    PublicKey::from_hex(pubkey)
+        .ok()
+        .filter(|key| key.xonly().is_ok())
+        .and_then(|key| key.to_bech32().ok())
+        .ok_or_else(JsError::public_key)
 }
 
 #[derive(Deserialize)]
@@ -198,6 +199,9 @@ mod tests {
 
     const SECRET: &str = "0000000000000000000000000000000000000000000000000000000000000003";
     const AUX: [u8; 32] = [7; 32];
+    const GENERATOR_PUBKEY: &str =
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    const GENERATOR_NPUB: &str = "npub10xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqpkge6d";
 
     #[test]
     fn secret_keys_parse_from_hex_or_nsec_and_round_trip() {
@@ -291,5 +295,24 @@ mod tests {
             "created_at": 1, "kind": 1, "tags": [], "content": ""
         });
         assert!(signed_event_json(SECRET, &mine.to_string(), &AUX).is_ok());
+    }
+
+    #[test]
+    fn npub_encode_known_pubkey() {
+        assert_eq!(
+            super::encode_npub(GENERATOR_PUBKEY).expect("npub"),
+            GENERATOR_NPUB
+        );
+    }
+
+    #[test]
+    fn npub_encode_rejects_invalid_hex() {
+        for bad in ["", "zz", &"0".repeat(63), &"f".repeat(64)] {
+            assert_eq!(
+                super::encode_npub(bad).err().map(|error| error.code),
+                Some("invalid_public_key"),
+                "{bad:?}"
+            );
+        }
     }
 }

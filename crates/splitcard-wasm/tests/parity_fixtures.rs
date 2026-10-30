@@ -17,7 +17,8 @@ use std::fmt::Display;
 
 use nostr::{
     event::{Event, Kind, Tag, UnsignedEvent},
-    key::Keys,
+    key::{Keys, PublicKey},
+    nips::nip19::ToBech32,
     types::Timestamp,
 };
 use secp256k1::Secp256k1;
@@ -1130,6 +1131,36 @@ fn v2_status_cases(cases: &mut Cases) {
     );
 }
 
+fn npub_cases(cases: &mut Cases) {
+    const PUBKEY: &str = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    let npub = PublicKey::from_hex(PUBKEY)
+        .expect("generator pubkey")
+        .to_bech32()
+        .expect("npub");
+    cases.ok(
+        "npub_encode: secp256k1 generator",
+        "npub_encode",
+        json!([PUBKEY]),
+        json!(npub),
+    );
+    cases.error(
+        "npub_encode: invalid hex",
+        "npub_encode",
+        json!(["zz"]),
+        "invalid_public_key",
+        "public key must be an npub or 64 hex characters, and a valid secp256k1 key",
+        Value::Null,
+    );
+    cases.error(
+        "npub_encode: off-curve hex",
+        "npub_encode",
+        json!(["f".repeat(64)]),
+        "invalid_public_key",
+        "public key must be an npub or 64 hex characters, and a valid secp256k1 key",
+        Value::Null,
+    );
+}
+
 fn generate() -> Value {
     let mut cases = Cases(Vec::new());
     card_hash_cases(&mut cases);
@@ -1143,6 +1174,7 @@ fn generate() -> Value {
     v2_cases(&mut cases);
     v2_signature_cases(&mut cases);
     v2_status_cases(&mut cases);
+    npub_cases(&mut cases);
     json!({
         "generated_by": "cargo test -p splitcard-wasm --test parity_fixtures (set SPLITCARD_UPDATE_FIXTURES=1 to rewrite)",
         "cases": cases.0,

@@ -14,6 +14,7 @@ import {
   display_basis_points,
   signature_template,
   card_hash,
+  npub_encode,
 } from "../pkg/splitcard_wasm.js";
 
 const wasm = readFileSync(new URL("../pkg/splitcard_wasm_bg.wasm", import.meta.url));
@@ -48,6 +49,18 @@ const v2 = `{"version":2,"card_id":"lagos/llamas","event":"Lagos","team":"Llamas
 check("version 2 display_basis_points, equal split", display_basis_points(v2), [3334, 3333, 3333]);
 // The secp256k1 generator's x coordinate, a valid x-only public key.
 const g = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+check(
+  "npub_encode generator",
+  npub_encode(g),
+  "npub10xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqpkge6d",
+);
+try {
+  npub_encode("zz");
+  failures += 1;
+  console.error("FAIL npub_encode(\"zz\") did not throw");
+} catch (error) {
+  check("npub_encode invalid hex", error.code, "invalid_public_key");
+}
 const template = signature_template(card_hash(v2), g, 1700000000, "ada@example.com");
 check("version 2 template carries the lud16 tag", template.tags[2], ["lud16", "ada@example.com"]);
 check("version 1 template has no lud16 tag", signature_template(card_hash(card), g, 1700000000).tags.length, 2);

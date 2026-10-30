@@ -5,7 +5,7 @@ import { HomeHeader } from "./HomeHeader";
 import { InviteBanner } from "./InviteBanner";
 import type { HomeData } from "./types";
 
-export function HomeView({ data }: { data: HomeData }) {
+export function HomeView({ data, npub }: { data: HomeData; npub?: string | null }) {
   const hasAttention = data.attention !== null;
 
   return (
@@ -18,7 +18,7 @@ export function HomeView({ data }: { data: HomeData }) {
         }
       >
         <HomeHeader />
-        <HomeGreeting greeting={data.greeting} compact={hasAttention} />
+        <HomeGreeting greeting={data.greeting} compact={hasAttention} npub={npub} />
         {data.attention ? <AttentionCard attention={data.attention} /> : null}
       </section>
 

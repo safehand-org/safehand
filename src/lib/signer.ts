@@ -140,6 +140,28 @@ export async function currentPubkey(): Promise<string | null> {
 }
 
 /**
+ * The signed-in member's `npub`, encoded in WebAssembly from the signer's
+ * public key. When `serverPubkey` is set (from `GET /me`) and it does not
+ * match, returns null and logs: the wrong key is signed in.
+ * Never returns an `nsec`.
+ */
+export async function currentNpub(serverPubkey?: string): Promise<string | null> {
+  const pubkey = await currentPubkey();
+  if (!pubkey) return null;
+  if (serverPubkey !== undefined && pubkey !== serverPubkey) {
+    console.error("Wrong key signed in: local public key does not match GET /me.");
+    return null;
+  }
+  const wasm = await loadWasm();
+  try {
+    return wasm.npub_encode(pubkey);
+  } catch (error) {
+    console.error("Could not encode npub from the signed-in public key.", error);
+    return null;
+  }
+}
+
+/**
  * Signs in with a NIP-07 extension. Resolves to an error message, or null
  * once signed in.
  */

@@ -1389,6 +1389,44 @@
       },
       "function": "check_supersede",
       "name": "check_supersede: removed member's signature needs a lud16 tag on a version 2 card"
+    },
+    {
+      "args": [
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      ],
+      "expected": {
+        "ok": "npub10xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqpkge6d"
+      },
+      "function": "npub_encode",
+      "name": "npub_encode: secp256k1 generator"
+    },
+    {
+      "args": [
+        "zz"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_public_key",
+          "details": null,
+          "message": "public key must be an npub or 64 hex characters, and a valid secp256k1 key"
+        }
+      },
+      "function": "npub_encode",
+      "name": "npub_encode: invalid hex"
+    },
+    {
+      "args": [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "expected": {
+        "error": {
+          "code": "invalid_public_key",
+          "details": null,
+          "message": "public key must be an npub or 64 hex characters, and a valid secp256k1 key"
+        }
+      },
+      "function": "npub_encode",
+      "name": "npub_encode: off-curve hex"
     }
   ],
   "generated_by": "cargo test -p splitcard-wasm --test parity_fixtures (set SPLITCARD_UPDATE_FIXTURES=1 to rewrite)"
